@@ -29,6 +29,19 @@ If Docker network `supabase_network_mike` is missing:
 docker network create supabase_network_mike
 ```
 
+If `supabase_vector_mike` container is unhealthy (known on some macOS ARM setups):
+```bash
+# Full clean restart
+npx supabase@latest stop --no-backup
+docker container prune -f
+docker volume prune -f
+npx supabase@latest start
+```
+
+If the vector container consistently fails, check Docker Desktop memory
+allocation (minimum 4 GB recommended) and Docker Desktop settings for
+Apple Virtualization Framework vs. Rosetta.
+
 ## Migrations fail
 
 ```bash
