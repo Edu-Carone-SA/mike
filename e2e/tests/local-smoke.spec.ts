@@ -28,10 +28,24 @@ test.describe("Mike Atlas local E2E", () => {
     expect(body.service).toBe("mike-backend");
   });
 
-  test("case-law endpoint is a KNOWN_SECURITY_BLOCKER", async ({ page }) => {
-    const response = await page.request.get("http://localhost:3001/case-law/case-opinions");
-    // This endpoint currently does not require authentication (P0 blocker)
-    // Documenting the known behavior
-    expect(response.status()).toBeLessThan(500);
+  test("case-law endpoint rejects anonymous request", async ({ page }) => {
+    // POST without Authorization header → 401
+    const response = await page.request.post(
+      "http://localhost:3001/case-law/case-opinions",
+      { data: { clusterId: 1 } },
+    );
+    expect(response.status()).toBe(401);
+  });
+
+  test("case-law endpoint rejects invalid token", async ({ page }) => {
+    // POST with invalid Bearer token → 401
+    const response = await page.request.post(
+      "http://localhost:3001/case-law/case-opinions",
+      {
+        headers: { Authorization: "Bearer invalid-token-xyz" },
+        data: { clusterId: 1 },
+      },
+    );
+    expect(response.status()).toBe(401);
   });
 });

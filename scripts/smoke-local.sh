@@ -5,7 +5,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 FAILURES=0
-KNOWN_BLOCKERS=0
 
 assert_ok() {
   local url="$1"
@@ -28,8 +27,23 @@ assert_rejected() {
   if [ "$code" = "401" ] || [ "$code" = "403" ] || [ "$code" = "404" ]; then
     echo "  [OK] $label rejected ($url) -> $code"
   else
-    echo "  [KNOWN_SECURITY_BLOCKER] $label returned $code without authentication (expected 401/403/404)"
-    KNOWN_BLOCKERS=$((KNOWN_BLOCKERS+1))
+    echo "  [FAIL] $label returned $code without authentication (expected 401/403/404)"
+    FAILURES=$((FAILURES+1))
+  fi
+}
+
+assert_rejected_post() {
+  local url="$1"
+  local label="$2"
+  local code
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" \
+    -H "Content-Type: application/json" \
+    -d '{"clusterId":1}' 2>/dev/null || echo "000")
+  if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+    echo "  [OK] $label rejected ($url) -> $code"
+  else
+    echo "  [FAIL] $label returned $code without authentication (expected 401/403)"
+    FAILURES=$((FAILURES+1))
   fi
 }
 
@@ -45,7 +59,7 @@ assert_ok "http://localhost:54321/rest/v1/" "supabase api"
 
 echo ""
 echo "--> Security baseline"
-assert_rejected "http://localhost:3001/case-law/case-opinions" "unauthenticated case-law endpoint"
+assert_rejected_post "http://localhost:3001/case-law/case-opinions" "unauthenticated case-law POST"
 
 echo ""
 if [ "${1:-}" = "--ai" ]; then
@@ -58,14 +72,10 @@ if [ "${1:-}" = "--ai" ]; then
 fi
 
 echo ""
-echo "Summary: $FAILURES failure(s), $KNOWN_BLOCKERS known security blocker(s)."
+echo "Summary: $FAILURES failure(s)."
 
 if [ "$FAILURES" -gt 0 ]; then
   exit 1
-fi
-
-if [ "$KNOWN_BLOCKERS" -gt 0 ]; then
-  echo "Known blockers are documented and tracked; sprint can conclude but production remains NO-GO."
 fi
 
 exit 0
