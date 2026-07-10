@@ -51,7 +51,12 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run build
+      - name: Build (with placeholder env for prerender)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY: placeholder-anon-key-for-build-only
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
+        run: npm run build
       - run: npm run test
       - name: npm audit (high+critical only)
         run: npm audit --audit-level=high || true
