@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --testNamePattern='unit|env|health|secrets|cors|rate|auth|provider|payload|storage|crypto|logger'",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --config vitest.coverage.config.ts"
   },
   "engines": {
     "node": "20.x",
