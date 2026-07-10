@@ -42,14 +42,17 @@ All tests use synthetic data:
 - Keys: fake strings, never real API keys
 - Database: local Supabase only
 
-## Known Security Blockers
+## Security Tests
 
-Tests that document known security issues use the `KNOWN_SECURITY_BLOCKER` label:
+Tests that verify authentication is enforced on protected endpoints:
 
 ```typescript
-it("case-law endpoint accessible without auth [KNOWN_SECURITY_BLOCKER]", () => {
-  // This test documents a known P0 security issue
-  // Sprint 3 will fix the authentication
+it("case-law endpoint rejects anonymous request", async ({ page }) => {
+  const response = await page.request.post(
+    "http://localhost:3001/case-law/case-opinions",
+    { data: { clusterId: 1 } },
+  );
+  expect(response.status()).toBe(401);
 });
 ```
 
