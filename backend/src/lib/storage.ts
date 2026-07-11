@@ -1,13 +1,17 @@
 /**
  * S3-compatible storage utilities for Mike document management.
- * Supports AWS S3, Cloudflare R2, MinIO and other S3-compatible stores.
+ * Supports AWS S3 (IAM role or static credentials), Cloudflare R2, MinIO.
  *
  * Env vars (S3_* preferred; R2_* kept for upstream compatibility):
  *   S3_ENDPOINT_URL      — optional endpoint for S3-compatible stores (MinIO, R2)
- *   S3_ACCESS_KEY_ID     — access key ID
- *   S3_SECRET_ACCESS_KEY — secret access key
- *   S3_BUCKET_NAME       — bucket name
+ *   S3_ACCESS_KEY_ID     — access key ID (omit for AWS IAM role)
+ *   S3_SECRET_ACCESS_KEY — secret access key (omit for AWS IAM role)
+ *   S3_BUCKET_NAME       — bucket name (required)
  *   S3_REGION            — region (default: us-east-1)
+ *
+ * When S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are both unset, the AWS SDK
+ * default credential provider chain is used (ECS task role, EC2 instance profile, etc.).
+ * This is the recommended mode for AWS ECS Fargate deployments.
  *
  * Fallback to legacy R2_* variables if S3_* are not set.
  */
@@ -44,18 +48,44 @@ function region(): string {
   return process.env.S3_REGION || "us-east-1";
 }
 
+/**
+ * Whether static credentials are explicitly provided.
+ * When false, the AWS SDK default credential provider chain is used
+ * (ECS task role, EC2 instance profile, environment, etc.).
+ */
+function hasStaticCredentials(): boolean {
+  return Boolean(accessKeyId() && secretAccessKey());
+}
+
+/**
+ * Storage is enabled when a bucket name is configured.
+ * Static credentials are optional — in AWS ECS, the task role provides credentials.
+ * For MinIO/R2, an endpoint URL and static credentials are expected.
+ */
+function isStorageConfigured(): boolean {
+  return Boolean(bucketName() && bucketName() !== "mike");
+}
+
 let cachedClient: S3Client | undefined;
 
 function getClient(): S3Client {
   if (!cachedClient) {
     const endpoint = endpointUrl();
+    const staticCreds = hasStaticCredentials();
     cachedClient = new S3Client({
       region: region(),
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
-      credentials: {
-        accessKeyId: accessKeyId()!,
-        secretAccessKey: secretAccessKey()!,
-      },
+      // Only pass explicit credentials when static creds are provided.
+      // When omitted, AWS SDK uses the default credential provider chain
+      // (ECS task role, EC2 instance profile, etc.).
+      ...(staticCreds
+        ? {
+            credentials: {
+              accessKeyId: accessKeyId()!,
+              secretAccessKey: secretAccessKey()!,
+            },
+          }
+        : {}),
     });
   }
   return cachedClient;
@@ -63,9 +93,7 @@ function getClient(): S3Client {
 
 const BUCKET = bucketName();
 
-export const storageEnabled = Boolean(
-  endpointUrl() && accessKeyId() && secretAccessKey(),
-);
+export const storageEnabled = isStorageConfigured();
 
 export async function checkStorageConnectivity(): Promise<boolean> {
   if (!storageEnabled) return false;
@@ -85,7 +113,7 @@ export async function checkStorageConnectivity(): Promise<boolean> {
 function requireStorageConfig(): void {
   if (!storageEnabled) {
     throw new Error(
-      "S3_ENDPOINT_URL (or R2_ENDPOINT_URL), S3_ACCESS_KEY_ID (or R2_ACCESS_KEY_ID), and S3_SECRET_ACCESS_KEY (or R2_SECRET_ACCESS_KEY) must be set",
+      "S3_BUCKET_NAME must be set to a valid bucket name. For MinIO/R2, also set S3_ENDPOINT_URL, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY. For AWS ECS, ensure the task role has S3 permissions.",
     );
   }
 }
