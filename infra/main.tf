@@ -24,11 +24,11 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project          = "atlas-mike"
-      Environment      = "staging"
-      Owner            = "mimosa-malpassada"
-      CostCenter       = "atlas-governance"
-      ManagedBy        = "terraform"
+      Project            = "atlas-mike"
+      Environment        = "staging"
+      Owner              = "mimosa-malpassada"
+      CostCenter         = "atlas-governance"
+      ManagedBy          = "terraform"
       DataClassification = "synthetic-only"
     }
   }
@@ -648,7 +648,7 @@ resource "aws_budgets_budget" "staging" {
     comparison_operator = "GREATER_THAN"
     threshold           = 80
     threshold_type      = "PERCENTAGE"
-    notification_type   = "EMAIL"
+    notification_type   = "ACTUAL"
   }
 }
 
@@ -665,11 +665,11 @@ output "frontend_url" {
 }
 
 output "ecr_frontend_uri" {
-  value = aws_ecr_repository.frontend.repository_uri
+  value = aws_ecr_repository.frontend.repository_url
 }
 
 output "ecr_backend_uri" {
-  value = aws_ecr_repository.backend.repository_uri
+  value = aws_ecr_repository.backend.repository_url
 }
 
 output "ecs_cluster_name" {
