@@ -15,6 +15,7 @@ RUN npm ci
 # Copy source and build.
 COPY tsconfig.json ./
 COPY next.config.ts ./
+COPY postcss.config.mjs ./
 COPY src/ ./src/
 COPY public/ ./public/
 
