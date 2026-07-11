@@ -6,5 +6,6 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     service: "mike-frontend",
+    timestamp: new Date().toISOString(),
   });
 }

@@ -106,9 +106,10 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 **Command:**
 
 ```bash
+# Replace $ANON_KEY with the staging anon key from Secrets Manager
 curl -s -o /dev/null -w "%{http_code}\n" \
   -H "apikey: $ANON_KEY" \
-  -H "Authorization: Bearer not-a-real-token" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   "$STAGING_URL/api/documents"
 ```
 
