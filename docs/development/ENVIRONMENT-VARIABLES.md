@@ -21,6 +21,7 @@
 | GEMINI_API_KEY | No | Yes | (optional) | — | **NEVER** | LLM provider | Cost + data exposure |
 | OPENAI_API_KEY | No | Yes | (optional) | — | **NEVER** | LLM provider | Cost + data exposure |
 | OPENROUTER_API_KEY | No | Yes | (optional) | — | **NEVER** | LLM provider | Cost + data exposure |
+| DEEPSEEK_API_KEY | No | Yes | (optional) | — | **NEVER** | LLM provider | Cost + data exposure |
 | RESEND_API_KEY | No | Yes | (optional) | — | **NEVER** | Email provider | Email spoofing |
 | COURTLISTENER_API_TOKEN | No | Yes | (empty) | — | **NEVER** | US case-law API | Disabled in Atlas |
 | LOG_RAW_LLM_STREAM | No | No | false | **false** | No | Raw LLM log toggle | Leaks prompts/documents |

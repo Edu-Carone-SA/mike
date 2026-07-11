@@ -325,7 +325,7 @@ export function TRView({ reviewId, projectId }: Props) {
                 const payload = await response.json().catch(() => null);
                 const provider =
                     payload &&
-                    ["claude", "gemini", "openai"].includes(payload.provider)
+                    ["claude", "gemini", "openai", "deepseek"].includes(payload.provider)
                         ? (payload.provider as ModelProvider)
                         : getModelProvider(tabularModel);
                 if (payload?.code === "missing_api_key" && provider) {

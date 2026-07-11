@@ -45,6 +45,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
+  DEEPSEEK_API_KEY: z.string().min(1).optional(),
 
   // Email
   RESEND_API_KEY: z.string().min(1).optional(),
@@ -148,12 +149,13 @@ export function validateEnv(): Env {
     env.GEMINI_API_KEY,
     env.OPENAI_API_KEY,
     env.OPENROUTER_API_KEY,
+    env.DEEPSEEK_API_KEY,
   ].some(Boolean);
 
   if (!hasAnyProviderKey) {
     // Warn but do not fail: local development can run without an LLM provider.
     console.warn(
-      "[env] No LLM provider key configured. Chat features will fail until ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY or OPENROUTER_API_KEY is set.",
+      "[env] No LLM provider key configured. Chat features will fail until ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY or DEEPSEEK_API_KEY is set.",
     );
   }
 
