@@ -30,7 +30,7 @@ const envSchema = z.object({
   S3_ENDPOINT_URL: z.string().url().optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
-  S3_BUCKET_NAME: z.string().min(1).default("mike"),
+  S3_BUCKET_NAME: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).default("us-east-1"),
 
   // Legacy R2 variables (optional; used only if S3_* are absent)
@@ -93,17 +93,24 @@ const envSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(1),
 }).refine(
   (data) => {
+    // In AWS ECS with IAM task role, credentials come from the role — no
+    // explicit S3_ENDPOINT_URL / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY needed.
+    // We accept three modes:
+    //   1. Explicit S3 credentials (local/MinIO)
+    //   2. Explicit R2 credentials (legacy)
+    //   3. S3_BUCKET_NAME set without credentials (AWS IAM role)
     const hasS3 = Boolean(
       data.S3_ENDPOINT_URL && data.S3_ACCESS_KEY_ID && data.S3_SECRET_ACCESS_KEY,
     );
     const hasR2 = Boolean(
       data.R2_ENDPOINT_URL && data.R2_ACCESS_KEY_ID && data.R2_SECRET_ACCESS_KEY,
     );
-    return hasS3 || hasR2;
+    const hasIamRole = Boolean(data.S3_BUCKET_NAME) && !data.S3_ENDPOINT_URL;
+    return hasS3 || hasR2 || hasIamRole;
   },
   {
     message:
-      "Storage credentials are required. Provide S3_ENDPOINT_URL, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (preferred) or the legacy R2_* equivalents.",
+      "Storage credentials are required. Provide S3_ENDPOINT_URL, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (preferred) for local/MinIO, or set S3_BUCKET_NAME without endpoint to use AWS IAM role.",
     path: ["S3_ENDPOINT_URL"],
   },
 ).refine(
