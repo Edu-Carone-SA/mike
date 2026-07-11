@@ -31,9 +31,9 @@ export const GEMINI_LOW_MODELS = ["gemini-3.1-flash-lite-preview"] as const;
 export const OPENAI_LOW_MODELS = ["gpt-5.4-lite"] as const;
 export const DEEPSEEK_LOW_MODELS = ["deepseek-v4-flash"] as const;
 
-export const DEFAULT_MAIN_MODEL = "gemini-3-flash-preview";
-export const DEFAULT_TITLE_MODEL = "gemini-3.1-flash-lite-preview";
-export const DEFAULT_TABULAR_MODEL = "gemini-3-flash-preview";
+export const DEFAULT_MAIN_MODEL = "deepseek-v4-pro";
+export const DEFAULT_TITLE_MODEL = "deepseek-v4-flash";
+export const DEFAULT_TABULAR_MODEL = "deepseek-v4-flash";
 
 const ALL_MODELS = new Set<string>([
     ...CLAUDE_MAIN_MODELS,

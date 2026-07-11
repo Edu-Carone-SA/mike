@@ -119,8 +119,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                 creditsResetDate: futureResetDate.toISOString(),
                 creditsRemaining: 999999, // temporarily unlimited
                 tier: "Free",
-                titleModel: "gemini-3.1-flash-lite-preview",
-                tabularModel: "gemini-3-flash-preview",
+                titleModel: "deepseek-v4-flash",
+                tabularModel: "deepseek-v4-flash",
                 mfaOnLogin: false,
                 legalResearchUs: true,
                 apiKeys: emptyApiKeys(),
