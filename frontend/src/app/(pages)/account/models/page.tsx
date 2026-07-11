@@ -91,7 +91,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.titleModel ??
                             profile?.titleModel ??
-                            "gemini-3.1-flash-lite-preview"
+                            "deepseek-v4-flash"
                         }
                         options={SETTINGS_MODELS}
                         apiKeys={profile?.apiKeys}
@@ -113,7 +113,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.tabularModel ??
                             profile?.tabularModel ??
-                            "gemini-3-flash-preview"
+                            "deepseek-v4-flash"
                         }
                         options={MODELS}
                         apiKeys={profile?.apiKeys}

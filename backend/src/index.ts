@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "express-async-errors";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -194,6 +195,19 @@ app.get("/ready", async (_req, res) => {
     },
     timestamp: new Date().toISOString(),
   });
+});
+
+// Centralized error handler — catches async errors that express-async-errors
+// forwards. Without this, unhandled promise rejections crash the Node.js process.
+app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  console.error("[unhandled-error]", {
+    path: req.path,
+    method: req.method,
+    error: errMsg,
+  });
+  if (res.headersSent) return;
+  res.status(500).json({ detail: errMsg || "Internal server error" });
 });
 
 app.listen(PORT, () => {
