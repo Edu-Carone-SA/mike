@@ -98,6 +98,7 @@ describe("env validation", () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
     vi.resetModules();
     const { validateEnv } = await import("../src/lib/env");
     // Should not throw

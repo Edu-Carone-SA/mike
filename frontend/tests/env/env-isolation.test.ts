@@ -30,6 +30,7 @@ const FORBIDDEN_NAME_TOKENS = [
   "RESEND",
   "OPENAI",
   "ANTHROPIC",
+  "DEEPSEEK",
   "SUPABASE_SERVICE",
 ] as const;
 

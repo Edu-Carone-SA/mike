@@ -7,6 +7,7 @@ import {
     DEFAULT_TITLE_MODEL,
     CLAUDE_LOW_MODELS,
     OPENAI_LOW_MODELS,
+    DEEPSEEK_LOW_MODELS,
     resolveModel,
 } from "../lib/llm";
 import {
@@ -280,9 +281,11 @@ function serializeProfile(row: UserProfileRow, apiKeyStatus?: ApiKeyStatus) {
         ? DEFAULT_TITLE_MODEL
         : apiKeyStatus?.openai
           ? OPENAI_LOW_MODELS[0]
-          : apiKeyStatus?.claude
-            ? CLAUDE_LOW_MODELS[0]
-            : DEFAULT_TITLE_MODEL;
+          : apiKeyStatus?.deepseek
+            ? DEEPSEEK_LOW_MODELS[0]
+            : apiKeyStatus?.claude
+              ? CLAUDE_LOW_MODELS[0]
+              : DEFAULT_TITLE_MODEL;
     return {
         displayName: row.display_name,
         organisation: row.organisation,
