@@ -13,6 +13,11 @@ on:
         description: 'Image tag (SHA or branch name)'
         required: false
         default: ''
+      skip_migration:
+        description: 'Skip database migration'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -26,6 +31,7 @@ env:
   AWS_REGION: us-east-1
   ECR_FRONTEND: 136770599935.dkr.ecr.us-east-1.amazonaws.com/atlas-mike-staging/frontend
   ECR_BACKEND: 136770599935.dkr.ecr.us-east-1.amazonaws.com/atlas-mike-staging/backend
+  ECR_DB_MIGRATE: 136770599935.dkr.ecr.us-east-1.amazonaws.com/atlas-mike-staging/db-migrate
   ECS_CLUSTER: atlas-mike-staging-cluster
   ECS_FRONTEND_SERVICE: atlas-mike-staging-frontend
   ECS_BACKEND_SERVICE: atlas-mike-staging-backend
@@ -38,12 +44,15 @@ env:
   FE_SG: sg-082d8757b66a10ae3
   BE_SG: sg-0ff72c73aa67e4e86
   VPC_SUBNETS: subnet-0185ebeda08b3c0d7 subnet-0bebb07a8edf20dc8 subnet-05549d7007b3f5eb0
+  STAGING_URL: https://mike.agov.app
 
 jobs:
-  deploy:
-    name: Build and Deploy to Staging
+  build:
+    name: Build and Push Images
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -56,8 +65,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU for ARM64 builds
+        uses: docker/setup-qemu-action@v3
 
       - name: Determine image tag
         id: tag
@@ -73,26 +84,185 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: true
-          tags: |
-            ${{ env.ECR_BACKEND }}:${{ steps.tag.outputs.tag }}
-            ${{ env.ECR_BACKEND }}:latest
+          tags: ${{ env.ECR_BACKEND }}:${{ steps.tag.outputs.tag }}
 
       - name: Build and push frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: true
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-            NEXT_PUBLIC_API_BASE_URL=http://atlas-mike-staging-alb-1821218227.us-east-1.elb.amazonaws.com
-          tags: |
-            ${{ env.ECR_FRONTEND }}:${{ steps.tag.outputs.tag }}
-            ${{ env.ECR_FRONTEND }}:latest
+            NEXT_PUBLIC_API_BASE_URL=${{ env.STAGING_URL }}
+          tags: ${{ env.ECR_FRONTEND }}:${{ steps.tag.outputs.tag }}
+
+      - name: Build and push db-migrate image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./infra/docker/db-migrate/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.ECR_DB_MIGRATE }}:${{ steps.tag.outputs.tag }}
+
+  migrate:
+    name: Run Database Migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    if: ${{ github.event.inputs.skip_migration != 'true' }}
+
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Register migration task definition
+        id: migrate-td
+        run: |
+          SUBNETS_JSON=$(echo "$VPC_SUBNETS" | tr ' ' ',' | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+
+          cat > /tmp/migrate-td.json << 'TDJSON'
+          {
+            "family": "atlas-mike-staging-db-migrate",
+            "networkMode": "awsvpc",
+            "executionRoleArn": "${TASK_EXEC_ROLE}",
+            "containerDefinitions": [{
+              "name": "db-migrate",
+              "image": "${ECR_DB_MIGRATE}:${TAG}",
+              "essential": true,
+              "environment": [
+                {"name": "PGSSLMODE", "value": "require"}
+              ],
+              "secrets": [
+                {"name": "DATABASE_URL", "valueFrom": "${SECRET_ARN}:DATABASE_URL::"}
+              ],
+              "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                  "awslogs-group": "/ecs/atlas-mike-staging-db-migrate",
+                  "awslogs-region": "us-east-1",
+                  "awslogs-stream-prefix": "ci-migrate"
+                }
+              }
+            }],
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "runtimePlatform": {
+              "cpuArchitecture": "ARM64",
+              "operatingSystemFamily": "LINUX"
+            }
+          }
+          TDJSON
+
+          sed -i "s|\${TASK_EXEC_ROLE}|${TASK_EXEC_ROLE}|g" /tmp/migrate-td.json
+          sed -i "s|\${ECR_DB_MIGRATE}|${ECR_DB_MIGRATE}|g" /tmp/migrate-td.json
+          sed -i "s|\${TAG}|${{ needs.build.outputs.tag }}|g" /tmp/migrate-td.json
+          sed -i "s|\${SECRET_ARN}|${SECRET_ARN}|g" /tmp/migrate-td.json
+
+          REV=$(aws ecs register-task-definition --cli-input-json file:///tmp/migrate-td.json --query 'taskDefinition.revision' --output text)
+          echo "revision=$REV" >> $GITHUB_OUTPUT
+
+      - name: Run migration task
+        id: run-migrate
+        run: |
+          echo "=== Running migration task ==="
+
+          # Ensure log group exists
+          aws logs create-log-group --log-group-name /ecs/atlas-mike-staging-db-migrate 2>/dev/null || true
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster $ECS_CLUSTER \
+            --task-definition atlas-mike-staging-db-migrate:${{ steps.migrate-td.outputs.revision }} \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$VPC_SUBNETS],securityGroups=[$BE_SG],assignPublicIp=ENABLED}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "task_arn=$TASK_ARN" >> $GITHUB_OUTPUT
+          echo "Migration task started: $TASK_ARN"
+
+      - name: Wait for migration to complete
+        run: |
+          TASK_ARN="${{ steps.run-migrate.outputs.task_arn }}"
+          echo "Waiting for migration task to complete..."
+
+          # Poll until STOPPED (max 5 minutes)
+          MAX_WAIT=300
+          ELAPSED=0
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            STATUS=$(aws ecs describe-tasks \
+              --cluster $ECS_CLUSTER \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].lastStatus' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+
+            echo "  [$ELAPSED s] Status: $STATUS"
+
+            if [ "$STATUS" = "STOPPED" ]; then
+              EXIT_CODE=$(aws ecs describe-tasks \
+                --cluster $ECS_CLUSTER \
+                --tasks "$TASK_ARN" \
+                --query 'tasks[0].containers[0].exitCode' \
+                --output text)
+
+              STOP_REASON=$(aws ecs describe-tasks \
+                --cluster $ECS_CLUSTER \
+                --tasks "$TASK_ARN" \
+                --query 'tasks[0].stoppedReason' \
+                --output text)
+
+              echo "  Exit code: $EXIT_CODE"
+              echo "  Stop reason: $STOP_REASON"
+
+              if [ "$EXIT_CODE" = "0" ]; then
+                echo "✅ Migration completed successfully"
+                exit 0
+              else
+                echo "❌ Migration failed (exit code: $EXIT_CODE)"
+
+                # Print migration logs for debugging
+                echo "=== Migration logs ==="
+                aws logs tail /ecs/atlas-mike-staging-db-migrate --since 5m 2>/dev/null || true
+
+                exit 1
+              fi
+            fi
+
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+
+          echo "❌ Migration timed out after ${MAX_WAIT}s"
+          exit 1
+
+  deploy:
+    name: Deploy to ECS Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build, migrate]
+    if: ${{ always() && needs.build.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Register backend task definition
         id: backend-td
@@ -119,6 +289,7 @@ jobs:
               "secrets": [
                 {"name": "SUPABASE_URL", "valueFrom": "${SECRET_ARN}:SUPABASE_URL::"},
                 {"name": "SUPABASE_SECRET_KEY", "valueFrom": "${SECRET_ARN}:SUPABASE_SECRET_KEY::"},
+                {"name": "DEEPSEEK_API_KEY", "valueFrom": "${SECRET_ARN}:DEEPSEEK_API_KEY::"},
                 {"name": "DOWNLOAD_SIGNING_SECRET", "valueFrom": "${SECRET_ARN}:DOWNLOAD_SIGNING_SECRET::"},
                 {"name": "USER_API_KEYS_ENCRYPTION_SECRET", "valueFrom": "${SECRET_ARN}:USER_API_KEYS_ENCRYPTION_SECRET::"},
                 {"name": "S3_BUCKET_NAME", "valueFrom": "${SECRET_ARN}:S3_BUCKET_NAME::"},
@@ -127,7 +298,7 @@ jobs:
               "environment": [
                 {"name": "NODE_ENV", "value": "production"},
                 {"name": "PORT", "value": "3001"},
-                {"name": "FRONTEND_URL", "value": "http://atlas-mike-staging-alb-1821218227.us-east-1.elb.amazonaws.com"}
+                {"name": "FRONTEND_URL", "value": "${STAGING_URL}"}
               ],
               "healthCheck": {
                 "command": ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"],
@@ -141,16 +312,20 @@ jobs:
             }],
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "1024",
-            "memory": "2048"
+            "memory": "2048",
+            "runtimePlatform": {
+              "cpuArchitecture": "ARM64",
+              "operatingSystemFamily": "LINUX"
+            }
           }
           TDJSON
 
-          # Substitute variables
           sed -i "s|\${TASK_EXEC_ROLE}|${TASK_EXEC_ROLE}|g" /tmp/backend-td.json
           sed -i "s|\${TASK_ROLE}|${TASK_ROLE}|g" /tmp/backend-td.json
           sed -i "s|\${ECR_BACKEND}|${ECR_BACKEND}|g" /tmp/backend-td.json
-          sed -i "s|\${TAG}|${{ steps.tag.outputs.tag }}|g" /tmp/backend-td.json
+          sed -i "s|\${TAG}|${{ needs.build.outputs.tag }}|g" /tmp/backend-td.json
           sed -i "s|\${SECRET_ARN}|${SECRET_ARN}|g" /tmp/backend-td.json
+          sed -i "s|\${STAGING_URL}|${STAGING_URL}|g" /tmp/backend-td.json
 
           REV=$(aws ecs register-task-definition --cli-input-json file:///tmp/backend-td.json --query 'taskDefinition.revision' --output text)
           echo "revision=$REV" >> $GITHUB_OUTPUT
@@ -184,29 +359,35 @@ jobs:
               "environment": [
                 {"name": "NODE_ENV", "value": "production"},
                 {"name": "PORT", "value": "3000"},
-                {"name": "NEXT_PUBLIC_API_BASE_URL", "value": "http://atlas-mike-staging-alb-1821218227.us-east-1.elb.amazonaws.com"}
+                {"name": "HOSTNAME", "value": "0.0.0.0"},
+                {"name": "NEXT_PUBLIC_API_BASE_URL", "value": "${STAGING_URL}"}
               ],
               "healthCheck": {
-                "command": ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"],
+                "command": ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"],
                 "interval": 30,
                 "timeout": 5,
                 "retries": 3,
-                "startPeriod": 15
+                "startPeriod": 60
               },
               "memory": 512,
               "cpu": 256
             }],
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "256",
-            "memory": "512"
+            "memory": "512",
+            "runtimePlatform": {
+              "cpuArchitecture": "ARM64",
+              "operatingSystemFamily": "LINUX"
+            }
           }
           TDJSON
 
           sed -i "s|\${TASK_EXEC_ROLE}|${TASK_EXEC_ROLE}|g" /tmp/frontend-td.json
           sed -i "s|\${TASK_ROLE}|${TASK_ROLE}|g" /tmp/frontend-td.json
           sed -i "s|\${ECR_FRONTEND}|${ECR_FRONTEND}|g" /tmp/frontend-td.json
-          sed -i "s|\${TAG}|${{ steps.tag.outputs.tag }}|g" /tmp/frontend-td.json
+          sed -i "s|\${TAG}|${{ needs.build.outputs.tag }}|g" /tmp/frontend-td.json
           sed -i "s|\${SECRET_ARN}|${SECRET_ARN}|g" /tmp/frontend-td.json
+          sed -i "s|\${STAGING_URL}|${STAGING_URL}|g" /tmp/frontend-td.json
 
           REV=$(aws ecs register-task-definition --cli-input-json file:///tmp/frontend-td.json --query 'taskDefinition.revision' --output text)
           echo "revision=$REV" >> $GITHUB_OUTPUT
@@ -252,7 +433,20 @@ jobs:
 
       - name: Smoke test
         run: |
-          echo "=== Health check ==="
-          curl -sf http://atlas-mike-staging-alb-1821218227.us-east-1.elb.amazonaws.com/health || echo "Backend health check failed"
-          echo "=== Frontend ==="
-          curl -sf http://atlas-mike-staging-alb-1821218227.us-east-1.elb.amazonaws.com/ | head -5 || echo "Frontend check failed"
+          echo "=== Backend health ==="
+          curl -sf ${STAGING_URL}/health || echo "⚠️ Backend health check failed"
+          echo ""
+          echo "=== Backend ready ==="
+          curl -sf ${STAGING_URL}/ready || echo "⚠️ Backend ready check failed"
+          echo ""
+          echo "=== Frontend health ==="
+          curl -sf ${STAGING_URL}/api/health || echo "⚠️ Frontend health check failed"
+          echo ""
+          echo "=== Admin route (expect 401) ==="
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -X GET ${STAGING_URL}/admin/users)
+          echo "  /admin/users: $CODE"
+          if [ "$CODE" = "401" ]; then
+            echo "  ✅ Admin route correctly requires auth"
+          else
+            echo "  ⚠️ Expected 401, got $CODE"
+          fi
