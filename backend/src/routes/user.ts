@@ -60,6 +60,8 @@ type UserProfileRow = {
     tabular_model: string;
     mfa_on_login: boolean | null;
     legal_research_us: boolean | null;
+    role: string | null;
+    status: string | null;
 };
 
 function errorMessage(error: unknown): string {
@@ -165,9 +167,9 @@ function mcpOAuthPopupCsp(nonce: string) {
 }
 
 const PROFILE_SELECT =
-    "display_name, organisation, message_credits_used, credits_reset_date, tier, title_model, tabular_model, mfa_on_login, legal_research_us";
+    "display_name, organisation, message_credits_used, credits_reset_date, tier, title_model, tabular_model, mfa_on_login, legal_research_us, role, status";
 const PROFILE_SELECT_NO_LEGAL =
-    "display_name, organisation, message_credits_used, credits_reset_date, tier, title_model, tabular_model, mfa_on_login";
+    "display_name, organisation, message_credits_used, credits_reset_date, tier, title_model, tabular_model, mfa_on_login, role, status";
 const LEGACY_PROFILE_SELECT =
     "display_name, organisation, message_credits_used, credits_reset_date, tier, tabular_model";
 const LEGACY_PROFILE_MODEL_SELECT =
@@ -300,6 +302,8 @@ function serializeProfile(row: UserProfileRow, apiKeyStatus?: ApiKeyStatus) {
         tabularModel: resolveModel(row.tabular_model, DEFAULT_TABULAR_MODEL),
         mfaOnLogin: row.mfa_on_login === true,
         legalResearchUs: row.legal_research_us !== false,
+        role: row.role ?? "member",
+        status: row.status ?? "active",
         ...(apiKeyStatus ? { apiKeyStatus } : {}),
     };
 }

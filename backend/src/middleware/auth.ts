@@ -138,6 +138,52 @@ export async function requireAuth(
   next();
 }
 
+/**
+ * Require the authenticated user to have role === 'admin' in user_profiles.
+ * Must be used after requireAuth (which sets res.locals.userId).
+ */
+export async function requireAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const supabaseUrl = process.env.SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SECRET_KEY ?? "";
+
+  if (!supabaseUrl || !serviceKey) {
+    res.status(500).json({ detail: "Server auth is not configured" });
+    return;
+  }
+
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+
+  const { data: profile, error } = await admin
+    .from("user_profiles")
+    .select("role, status")
+    .eq("user_id", res.locals.userId)
+    .maybeSingle();
+
+  if (error) {
+    res.status(500).json({ detail: "Failed to verify admin role" });
+    return;
+  }
+
+  if (!profile || profile.role !== "admin") {
+    res.status(403).json({ detail: "Admin access required" });
+    return;
+  }
+
+  if (profile.status === "disabled") {
+    res.status(403).json({ detail: "Account is disabled" });
+    return;
+  }
+
+  res.locals.userRole = "admin";
+  next();
+}
+
 export async function requireMfaIfEnrolled(
   req: Request,
   res: Response,
