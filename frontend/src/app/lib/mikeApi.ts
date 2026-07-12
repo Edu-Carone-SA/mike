@@ -227,7 +227,33 @@ export interface UserProfile {
     tabularModel: string;
     mfaOnLogin: boolean;
     legalResearchUs: boolean;
+    role: string;
+    status: string;
     apiKeyStatus: ApiKeyStatus;
+}
+
+export interface AdminUser {
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    createdAt: string;
+    lastLoginAt: string | null;
+    disabledAt: string | null;
+}
+
+export interface AdminUserListResponse {
+    users: AdminUser[];
+}
+
+export interface AdminCreateUserResponse {
+    user: {
+        id: string;
+        email: string;
+        role: string;
+        status: string;
+    };
+    temporaryPassword: string;
 }
 
 export interface UserLookupResult {
@@ -238,6 +264,56 @@ export interface UserLookupResult {
 
 export async function getUserProfile(): Promise<UserProfile> {
     return apiRequest<UserProfile>("/user/profile");
+}
+
+// === Admin API ===
+
+export async function listAdminUsers(): Promise<AdminUserListResponse> {
+    return apiRequest<AdminUserListResponse>("/admin/users");
+}
+
+export async function createAdminUser(
+    email: string,
+    role: string,
+): Promise<AdminCreateUserResponse> {
+    return apiRequest<AdminCreateUserResponse>("/admin/users", {
+        method: "POST",
+        body: JSON.stringify({ email, role }),
+    });
+}
+
+export async function changeUserRole(
+    id: string,
+    role: string,
+): Promise<{ user: { id: string; role: string } }> {
+    return apiRequest(`/admin/users/${id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+    });
+}
+
+export async function disableUser(
+    id: string,
+): Promise<{ user: { id: string; status: string } }> {
+    return apiRequest(`/admin/users/${id}/disable`, { method: "POST" });
+}
+
+export async function enableUser(
+    id: string,
+): Promise<{ user: { id: string; status: string } }> {
+    return apiRequest(`/admin/users/${id}/enable`, { method: "POST" });
+}
+
+export async function resetUserPassword(
+    id: string,
+): Promise<{ user: { id: string; email: string }; temporaryPassword: string }> {
+    return apiRequest(`/admin/users/${id}/reset-password`, { method: "POST" });
+}
+
+export async function revokeUserSessions(
+    id: string,
+): Promise<{ revoked: boolean }> {
+    return apiRequest(`/admin/users/${id}/revoke-sessions`, { method: "POST" });
 }
 
 export async function lookupUserByEmail(
