@@ -68,9 +68,6 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up QEMU for ARM64 builds
-        uses: docker/setup-qemu-action@v3
-
       - name: Determine image tag
         id: tag
         run: |
@@ -85,7 +82,7 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ env.ECR_BACKEND }}:${{ steps.tag.outputs.tag }}
 
@@ -94,7 +91,7 @@ jobs:
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -107,7 +104,7 @@ jobs:
         with:
           context: .
           file: ./infra/docker/db-migrate/Dockerfile
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ env.ECR_DB_MIGRATE }}:${{ steps.tag.outputs.tag }}
 
@@ -156,11 +153,7 @@ jobs:
             }],
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "256",
-            "memory": "512",
-            "runtimePlatform": {
-              "cpuArchitecture": "ARM64",
-              "operatingSystemFamily": "LINUX"
-            }
+            "memory": "512"
           }
           TDJSON
 
@@ -313,11 +306,7 @@ jobs:
             }],
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "1024",
-            "memory": "2048",
-            "runtimePlatform": {
-              "cpuArchitecture": "ARM64",
-              "operatingSystemFamily": "LINUX"
-            }
+            "memory": "2048"
           }
           TDJSON
 
@@ -375,11 +364,7 @@ jobs:
             }],
             "requiresCompatibilities": ["FARGATE"],
             "cpu": "256",
-            "memory": "512",
-            "runtimePlatform": {
-              "cpuArchitecture": "ARM64",
-              "operatingSystemFamily": "LINUX"
-            }
+            "memory": "512"
           }
           TDJSON
 
