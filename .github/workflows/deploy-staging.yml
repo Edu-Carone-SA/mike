@@ -44,7 +44,7 @@ env:
   BE_TG: arn:aws:elasticloadbalancing:us-east-1:136770599935:targetgroup/atlas-mike-stg-be/2422b758db6b41c7
   FE_SG: sg-082d8757b66a10ae3
   BE_SG: sg-0ff72c73aa67e4e86
-  VPC_SUBNETS: subnet-0185ebeda08b3c0d7 subnet-0bebb07a8edf20dc8 subnet-05549d7007b3f5eb0
+  VPC_SUBNETS: subnet-0185ebeda08b3c0d7,subnet-0bebb07a8edf20dc8,subnet-05549d7007b3f5eb0
   STAGING_URL: https://mike.agov.app
 
 jobs:
