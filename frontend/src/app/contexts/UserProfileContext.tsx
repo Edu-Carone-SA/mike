@@ -32,6 +32,8 @@ interface UserProfile {
     mfaOnLogin: boolean;
     legalResearchUs: boolean;
     apiKeys: ApiKeyState;
+    keySuffixes: Record<string, string | null>;
+    editable: Record<string, boolean>;
 }
 
 interface UserProfileContextType {
@@ -89,10 +91,15 @@ function toProfile(data: ApiUserProfile): UserProfile {
         };
     }
 
+    const keySuffixes = apiKeyStatus.keySuffixes ?? {};
+    const editable = apiKeyStatus.editable ?? {};
+
     return {
         ...profile,
         mfaOnLogin: profile.mfaOnLogin === true,
         apiKeys,
+        keySuffixes,
+        editable,
     };
 }
 
@@ -124,6 +131,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                 mfaOnLogin: false,
                 legalResearchUs: true,
                 apiKeys: emptyApiKeys(),
+                keySuffixes: {},
+                editable: {},
             });
         } finally {
             setLoading(false);
