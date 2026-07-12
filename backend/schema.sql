@@ -23,12 +23,43 @@ create table if not exists public.user_profiles (
   quote_model text,
   mfa_on_login boolean not null default false,
   legal_research_us boolean not null default true,
+  role text not null default 'member' check (role in ('admin', 'member')),
+  status text not null default 'active' check (status in ('active', 'disabled')),
+  last_login_at timestamptz,
+  created_by uuid references auth.users(id) on delete set null,
+  disabled_at timestamptz,
+  disabled_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_user_profiles_user
   on public.user_profiles(user_id);
+
+create index if not exists idx_user_profiles_role
+  on public.user_profiles(role);
+
+create index if not exists idx_user_profiles_status
+  on public.user_profiles(status);
+
+-- Admin audit log
+create table if not exists public.admin_audit_log (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid not null references auth.users(id) on delete cascade,
+  actor_email text,
+  action text not null,
+  target_id uuid references auth.users(id) on delete set null,
+  target_email text,
+  details jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_admin_audit_log_actor
+  on public.admin_audit_log(actor_id);
+create index if not exists idx_admin_audit_log_target
+  on public.admin_audit_log(target_id);
+create index if not exists idx_admin_audit_log_created
+  on public.admin_audit_log(created_at desc);
 
 create unique index if not exists user_profiles_email_lower_unique
   on public.user_profiles (lower(email))
