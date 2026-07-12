@@ -7,9 +7,6 @@ export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireAdmin);
 
-/**
- * Create a Supabase admin client using service-role key.
- */
 function createAdminClient() {
   const supabaseUrl = process.env.SUPABASE_URL ?? "";
   const serviceKey = process.env.SUPABASE_SECRET_KEY ?? "";
@@ -18,17 +15,15 @@ function createAdminClient() {
   });
 }
 
-/**
- * Log an admin action to the audit log.
- */
 async function logAdminAction(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: any,
   actorId: string,
   actorEmail: string,
   action: string,
   targetId?: string,
   targetEmail?: string,
-  details?: Record<string, unknown>,
+  previousValue?: string,
+  newValue?: string,
 ): Promise<void> {
   try {
     await admin.from("admin_audit_log").insert({
@@ -37,16 +32,14 @@ async function logAdminAction(
       action,
       target_id: targetId ?? null,
       target_email: targetEmail ?? null,
-      details: details ?? null,
+      previous_value: previousValue ?? null,
+      new_value: newValue ?? null,
     });
   } catch {
-    // Audit logging is best-effort; don't fail the request
+    // Best-effort
   }
 }
 
-/**
- * Generate a strong temporary password.
- */
 function generateTempPassword(): string {
   const chars =
     "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%";
@@ -58,11 +51,24 @@ function generateTempPassword(): string {
     .join("");
 }
 
+/**
+ * Count active admins. Used for last-admin protection.
+ */
+async function countActiveAdmins(admin: any): Promise<number> {
+  const { count, error } = await admin
+    .from("user_profiles")
+    .select("user_id", { count: "exact", head: true })
+    .eq("role", "admin")
+    .eq("status", "active");
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
 // GET /admin/users — List all users
-adminRouter.get("/users", async (req, res) => {
+adminRouter.get("/users", async (_req, res) => {
   const admin = createAdminClient();
 
-  // Get users from GoTrue admin API
   const { data: authData, error: authError } =
     await admin.auth.admin.listUsers();
 
@@ -70,7 +76,6 @@ adminRouter.get("/users", async (req, res) => {
     return res.status(500).json({ detail: authError.message });
   }
 
-  // Get profiles from user_profiles
   const { data: profiles, error: profileError } = await admin
     .from("user_profiles")
     .select(
@@ -119,7 +124,6 @@ adminRouter.post("/users", async (req, res) => {
   const actorEmail = res.locals.userEmail as string;
   const tempPassword = generateTempPassword();
 
-  // Create user via GoTrue admin API
   const { data: newUser, error: createError } =
     await admin.auth.admin.createUser({
       email: email.toLowerCase(),
@@ -138,7 +142,6 @@ adminRouter.post("/users", async (req, res) => {
     return res.status(500).json({ detail: "Failed to create user" });
   }
 
-  // Create or update profile with role
   const { error: profileError } = await admin
     .from("user_profiles")
     .upsert(
@@ -162,24 +165,28 @@ adminRouter.post("/users", async (req, res) => {
     admin,
     actorId,
     actorEmail,
-    "create_user",
+    "admin_user_created",
     newUser.user.id,
     email,
-    { role: role ?? "member" },
+    undefined,
+    role ?? "member",
   );
 
+  // Return user object + temporaryPassword (one-time only)
   return res.status(201).json({
-    id: newUser.user.id,
-    email: newUser.user.email,
-    role: role ?? "member",
-    status: "active",
-    tempPassword,
+    user: {
+      id: newUser.user.id,
+      email: newUser.user.email,
+      role: role ?? "member",
+      status: "active",
+    },
+    temporaryPassword: tempPassword,
   });
 });
 
-// PATCH /admin/users/:id/role — Change user role
-adminRouter.patch("/users/:id/role", async (req, res) => {
-  const { id } = req.params;
+// PATCH /admin/users/:userId/role — Change user role
+adminRouter.patch("/users/:userId/role", async (req, res) => {
+  const { userId } = req.params;
   const { role } = req.body as { role?: string };
 
   if (!role || !["admin", "member"].includes(role)) {
@@ -190,41 +197,91 @@ adminRouter.patch("/users/:id/role", async (req, res) => {
   const actorId = res.locals.userId as string;
   const actorEmail = res.locals.userEmail as string;
 
-  // Prevent self-demotion (last admin safety)
-  if (id === actorId && role === "member") {
-    return res
-      .status(400)
-      .json({ detail: "Use another admin to demote yourself" });
+  // Fetch current profile to get previous role
+  const { data: currentProfile } = await admin
+    .from("user_profiles")
+    .select("role, status, email")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!currentProfile) {
+    return res.status(404).json({ detail: "User not found" });
   }
 
-  const { data, error } = await admin
+  // Last admin protection: if demoting an admin, check there are other active admins
+  if (currentProfile.role === "admin" && role === "member") {
+    const adminCount = await countActiveAdmins(admin);
+    if (adminCount <= 1) {
+      return res.status(409).json({
+        code: "LAST_ADMIN_REQUIRED",
+        detail: "Cannot demote the last active admin",
+      });
+    }
+  }
+
+  const { error } = await admin
     .from("user_profiles")
     .update({ role, updated_at: new Date().toISOString() })
-    .eq("user_id", id)
-    .select("email")
-    .maybeSingle();
+    .eq("user_id", userId);
 
   if (error) {
     return res.status(500).json({ detail: error.message });
   }
 
-  await logAdminAction(admin, actorId, actorEmail, "change_role", id, data?.email, { role });
+  await logAdminAction(
+    admin,
+    actorId,
+    actorEmail,
+    "admin_user_role_changed",
+    userId,
+    currentProfile.email,
+    currentProfile.role,
+    role,
+  );
 
-  return res.json({ id, role });
+  return res.json({
+    user: { id: userId, role },
+  });
 });
 
-// PATCH /admin/users/:id/disable — Disable user
-adminRouter.patch("/users/:id/disable", async (req, res) => {
-  const { id } = req.params;
+// POST /admin/users/:userId/disable — Block user
+adminRouter.post("/users/:userId/disable", async (req, res) => {
+  const { userId } = req.params;
   const admin = createAdminClient();
   const actorId = res.locals.userId as string;
   const actorEmail = res.locals.userEmail as string;
 
-  if (id === actorId) {
-    return res.status(400).json({ detail: "Cannot disable your own account" });
+  // Self-disable protection
+  if (userId === actorId) {
+    return res.status(409).json({
+      code: "CANNOT_DISABLE_SELF",
+      detail: "Cannot disable your own account",
+    });
   }
 
-  const { data, error } = await admin
+  // Fetch current profile
+  const { data: currentProfile } = await admin
+    .from("user_profiles")
+    .select("role, status, email")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!currentProfile) {
+    return res.status(404).json({ detail: "User not found" });
+  }
+
+  // Last admin protection
+  if (currentProfile.role === "admin" && currentProfile.status === "active") {
+    const adminCount = await countActiveAdmins(admin);
+    if (adminCount <= 1) {
+      return res.status(409).json({
+        code: "LAST_ADMIN_REQUIRED",
+        detail: "Cannot disable the last active admin",
+      });
+    }
+  }
+
+  const { error } = await admin
     .from("user_profiles")
     .update({
       status: "disabled",
@@ -232,30 +289,52 @@ adminRouter.patch("/users/:id/disable", async (req, res) => {
       disabled_by: actorId,
       updated_at: new Date().toISOString(),
     })
-    .eq("user_id", id)
-    .select("email")
-    .maybeSingle();
+    .eq("user_id", userId);
 
   if (error) {
     return res.status(500).json({ detail: error.message });
   }
 
-  // Ban the user in GoTrue to prevent login
-  await admin.auth.admin.updateUserById(id, { ban_duration: "87600h" });
+  // Ban in GoTrue + revoke sessions
+  await admin.auth.admin.updateUserById(userId, { ban_duration: "87600h" });
+  try {
+    await admin.auth.admin.signOut(userId);
+  } catch {
+    // Best-effort
+  }
 
-  await logAdminAction(admin, actorId, actorEmail, "disable_user", id, data?.email);
+  await logAdminAction(
+    admin,
+    actorId,
+    actorEmail,
+    "admin_user_disabled",
+    userId,
+    currentProfile.email,
+  );
 
-  return res.json({ id, status: "disabled" });
+  return res.json({
+    user: { id: userId, status: "disabled" },
+  });
 });
 
-// PATCH /admin/users/:id/enable — Enable user
-adminRouter.patch("/users/:id/enable", async (req, res) => {
-  const { id } = req.params;
+// POST /admin/users/:userId/enable — Reactivate user
+adminRouter.post("/users/:userId/enable", async (req, res) => {
+  const { userId } = req.params;
   const admin = createAdminClient();
   const actorId = res.locals.userId as string;
   const actorEmail = res.locals.userEmail as string;
 
-  const { data, error } = await admin
+  const { data: currentProfile } = await admin
+    .from("user_profiles")
+    .select("email")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!currentProfile) {
+    return res.status(404).json({ detail: "User not found" });
+  }
+
+  const { error } = await admin
     .from("user_profiles")
     .update({
       status: "active",
@@ -263,31 +342,83 @@ adminRouter.patch("/users/:id/enable", async (req, res) => {
       disabled_by: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("user_id", id)
-    .select("email")
-    .maybeSingle();
+    .eq("user_id", userId);
 
   if (error) {
     return res.status(500).json({ detail: error.message });
   }
 
-  // Unban the user in GoTrue
-  await admin.auth.admin.updateUserById(id, { ban_duration: "none" });
+  // Unban in GoTrue
+  await admin.auth.admin.updateUserById(userId, { ban_duration: "none" });
 
-  await logAdminAction(admin, actorId, actorEmail, "enable_user", id, data?.email);
+  await logAdminAction(
+    admin,
+    actorId,
+    actorEmail,
+    "admin_user_enabled",
+    userId,
+    currentProfile.email,
+  );
 
-  return res.json({ id, status: "active" });
+  return res.json({
+    user: { id: userId, status: "active" },
+  });
 });
 
-// POST /admin/users/:id/reset-password — Reset user password
-adminRouter.post("/users/:id/reset-password", async (req, res) => {
-  const { id } = req.params;
+// POST /admin/users/:userId/revoke-sessions — Revoke all sessions
+adminRouter.post("/users/:userId/revoke-sessions", async (req, res) => {
+  const { userId } = req.params;
+  const admin = createAdminClient();
+  const actorId = res.locals.userId as string;
+  const actorEmail = res.locals.userEmail as string;
+
+  const { data: currentProfile } = await admin
+    .from("user_profiles")
+    .select("email")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!currentProfile) {
+    return res.status(404).json({ detail: "User not found" });
+  }
+
+  const { error } = await admin.auth.admin.signOut(userId);
+
+  if (error) {
+    return res.status(400).json({ detail: error.message });
+  }
+
+  await logAdminAction(
+    admin,
+    actorId,
+    actorEmail,
+    "admin_user_sessions_revoked",
+    userId,
+    currentProfile.email,
+  );
+
+  return res.json({ revoked: true });
+});
+
+// POST /admin/users/:userId/reset-password — Reset password
+adminRouter.post("/users/:userId/reset-password", async (req, res) => {
+  const { userId } = req.params;
   const admin = createAdminClient();
   const actorId = res.locals.userId as string;
   const actorEmail = res.locals.userEmail as string;
   const tempPassword = generateTempPassword();
 
-  const { error } = await admin.auth.admin.updateUserById(id, {
+  const { data: currentProfile } = await admin
+    .from("user_profiles")
+    .select("email")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!currentProfile) {
+    return res.status(404).json({ detail: "User not found" });
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(userId, {
     password: tempPassword,
   });
 
@@ -295,66 +426,38 @@ adminRouter.post("/users/:id/reset-password", async (req, res) => {
     return res.status(400).json({ detail: error.message });
   }
 
-  const { data: profile } = await admin
-    .from("user_profiles")
-    .select("email")
-    .eq("user_id", id)
-    .maybeSingle();
-
-  await logAdminAction(
-    admin,
-    actorId,
-    actorEmail,
-    "reset_password",
-    id,
-    profile?.email,
-  );
-
-  return res.json({ id, tempPassword });
-});
-
-// POST /admin/users/:id/revoke-sessions — Revoke all sessions
-adminRouter.post("/users/:id/revoke-sessions", async (req, res) => {
-  const { id } = req.params;
-  const admin = createAdminClient();
-  const actorId = res.locals.userId as string;
-  const actorEmail = res.locals.userEmail as string;
-
-  const { error } = await admin.auth.admin.signOut(id);
-
-  if (error) {
-    return res.status(400).json({ detail: error.message });
+  // Revoke sessions so old tokens stop working
+  try {
+    await admin.auth.admin.signOut(userId);
+  } catch {
+    // Best-effort
   }
 
-  const { data: profile } = await admin
-    .from("user_profiles")
-    .select("email")
-    .eq("user_id", id)
-    .maybeSingle();
-
   await logAdminAction(
     admin,
     actorId,
     actorEmail,
-    "revoke_sessions",
-    id,
-    profile?.email,
+    "admin_user_password_reset",
+    userId,
+    currentProfile.email,
   );
 
-  return res.json({ id, sessionsRevoked: true });
+  // Return temp password one-time only
+  return res.json({
+    user: { id: userId, email: currentProfile.email },
+    temporaryPassword: tempPassword,
+  });
 });
 
-// GET /admin/users/:id/audit — Get audit log for a specific user
-adminRouter.get("/users/:id/audit", async (req, res) => {
-  const { id } = req.params;
+// GET /admin/users/:userId/audit — Get audit log for a user
+adminRouter.get("/users/:userId/audit", async (req, res) => {
+  const { userId } = req.params;
   const admin = createAdminClient();
 
   const { data, error } = await admin
     .from("admin_audit_log")
-    .select(
-      "action, actor_email, target_email, details, created_at",
-    )
-    .or(`target_id.eq.${id},actor_id.eq.${id}`)
+    .select("action, actor_email, target_email, details, created_at")
+    .or(`target_id.eq.${userId},actor_id.eq.${userId}`)
     .order("created_at", { ascending: false })
     .limit(50);
 

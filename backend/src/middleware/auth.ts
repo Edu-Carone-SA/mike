@@ -132,6 +132,18 @@ export async function requireAuth(
       error: syncError.message,
     });
   }
+
+  // Check if user is disabled — defense-in-depth even if JWT hasn't expired
+  const { data: userStatus } = await admin
+    .from("user_profiles")
+    .select("status")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  if (userStatus?.status === "disabled") {
+    res.status(403).json({ code: "USER_DISABLED", detail: "Account is disabled" });
+    return;
+  }
+
   if (!(await enforceLoginMfaIfEnabled(req, res, admin, token))) {
     return;
   }

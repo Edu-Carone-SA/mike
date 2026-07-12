@@ -29,7 +29,10 @@ CREATE TABLE IF NOT EXISTS public.admin_audit_log (
   action text NOT NULL,
   target_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   target_email text,
+  previous_value text,
+  new_value text,
   details jsonb,
+  request_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

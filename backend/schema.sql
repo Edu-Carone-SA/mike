@@ -50,7 +50,10 @@ create table if not exists public.admin_audit_log (
   action text not null,
   target_id uuid references auth.users(id) on delete set null,
   target_email text,
+  previous_value text,
+  new_value text,
   details jsonb,
+  request_id text,
   created_at timestamptz not null default now()
 );
 

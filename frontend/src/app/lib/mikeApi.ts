@@ -247,11 +247,13 @@ export interface AdminUserListResponse {
 }
 
 export interface AdminCreateUserResponse {
-    id: string;
-    email: string;
-    role: string;
-    status: string;
-    tempPassword: string;
+    user: {
+        id: string;
+        email: string;
+        role: string;
+        status: string;
+    };
+    temporaryPassword: string;
 }
 
 export interface UserLookupResult {
@@ -283,7 +285,7 @@ export async function createAdminUser(
 export async function changeUserRole(
     id: string,
     role: string,
-): Promise<{ id: string; role: string }> {
+): Promise<{ user: { id: string; role: string } }> {
     return apiRequest(`/admin/users/${id}/role`, {
         method: "PATCH",
         body: JSON.stringify({ role }),
@@ -292,25 +294,25 @@ export async function changeUserRole(
 
 export async function disableUser(
     id: string,
-): Promise<{ id: string; status: string }> {
-    return apiRequest(`/admin/users/${id}/disable`, { method: "PATCH" });
+): Promise<{ user: { id: string; status: string } }> {
+    return apiRequest(`/admin/users/${id}/disable`, { method: "POST" });
 }
 
 export async function enableUser(
     id: string,
-): Promise<{ id: string; status: string }> {
-    return apiRequest(`/admin/users/${id}/enable`, { method: "PATCH" });
+): Promise<{ user: { id: string; status: string } }> {
+    return apiRequest(`/admin/users/${id}/enable`, { method: "POST" });
 }
 
 export async function resetUserPassword(
     id: string,
-): Promise<{ id: string; tempPassword: string }> {
+): Promise<{ user: { id: string; email: string }; temporaryPassword: string }> {
     return apiRequest(`/admin/users/${id}/reset-password`, { method: "POST" });
 }
 
 export async function revokeUserSessions(
     id: string,
-): Promise<{ id: string; sessionsRevoked: boolean }> {
+): Promise<{ revoked: boolean }> {
     return apiRequest(`/admin/users/${id}/revoke-sessions`, { method: "POST" });
 }
 

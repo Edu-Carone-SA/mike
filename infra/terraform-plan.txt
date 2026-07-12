@@ -1,0 +1,1096 @@
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # aws_budgets_budget.staging will be created
+  + resource "aws_budgets_budget" "staging" {
+      + account_id        = (known after apply)
+      + arn               = (known after apply)
+      + budget_type       = "COST"
+      + id                = (known after apply)
+      + limit_amount      = "50"
+      + limit_unit        = "USD"
+      + name              = "atlas-mike-staging-monthly"
+      + name_prefix       = (known after apply)
+      + tags_all          = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + time_period_end   = "2087-06-15_00:00"
+      + time_period_start = (known after apply)
+      + time_unit         = "MONTHLY"
+
+      + cost_filter (known after apply)
+
+      + cost_types (known after apply)
+
+      + notification {
+          + comparison_operator        = "GREATER_THAN"
+          + notification_type          = "ACTUAL"
+          + subscriber_email_addresses = []
+          + subscriber_sns_topic_arns  = []
+          + threshold                  = 80
+          + threshold_type             = "PERCENTAGE"
+        }
+    }
+
+  # aws_cloudwatch_log_group.backend will be created
+  + resource "aws_cloudwatch_log_group" "backend" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ecs/atlas-mike-staging-backend"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 14
+      + skip_destroy      = false
+      + tags_all          = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+    }
+
+  # aws_cloudwatch_log_group.frontend will be created
+  + resource "aws_cloudwatch_log_group" "frontend" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ecs/atlas-mike-staging-frontend"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 14
+      + skip_destroy      = false
+      + tags_all          = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+    }
+
+  # aws_cloudwatch_metric_alarm.backend_5xx will be created
+  + resource "aws_cloudwatch_metric_alarm" "backend_5xx" {
+      + actions_enabled                       = true
+      + alarm_description                     = "Backend 5xx errors above threshold"
+      + alarm_name                            = "atlas-mike-stg-backend-5xx"
+      + arn                                   = (known after apply)
+      + comparison_operator                   = "GreaterThanThreshold"
+      + evaluate_low_sample_count_percentiles = (known after apply)
+      + evaluation_periods                    = 2
+      + id                                    = (known after apply)
+      + metric_name                           = "HTTPCode_Target_5XX_Count"
+      + namespace                             = "AWS/ApplicationELB"
+      + period                                = 60
+      + statistic                             = "Sum"
+      + tags_all                              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + threshold                             = 5
+      + treat_missing_data                    = "missing"
+    }
+
+  # aws_cloudwatch_metric_alarm.backend_unhealthy will be created
+  + resource "aws_cloudwatch_metric_alarm" "backend_unhealthy" {
+      + actions_enabled                       = true
+      + alarm_description                     = "Backend unhealthy hosts"
+      + alarm_name                            = "atlas-mike-stg-backend-unhealthy"
+      + arn                                   = (known after apply)
+      + comparison_operator                   = "GreaterThanThreshold"
+      + evaluate_low_sample_count_percentiles = (known after apply)
+      + evaluation_periods                    = 2
+      + id                                    = (known after apply)
+      + metric_name                           = "UnHealthyHostCount"
+      + namespace                             = "AWS/ApplicationELB"
+      + period                                = 60
+      + statistic                             = "Average"
+      + tags_all                              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + threshold                             = 0
+      + treat_missing_data                    = "missing"
+    }
+
+  # aws_dynamodb_table.tf_locks will be created
+  + resource "aws_dynamodb_table" "tf_locks" {
+      + arn              = (known after apply)
+      + billing_mode     = "PAY_PER_REQUEST"
+      + hash_key         = "LockID"
+      + id               = (known after apply)
+      + name             = "atlas-mike-staging-tf-locks"
+      + read_capacity    = (known after apply)
+      + stream_arn       = (known after apply)
+      + stream_label     = (known after apply)
+      + stream_view_type = (known after apply)
+      + tags_all         = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + write_capacity   = (known after apply)
+
+      + attribute {
+          + name = "LockID"
+          + type = "S"
+        }
+
+      + point_in_time_recovery (known after apply)
+
+      + server_side_encryption (known after apply)
+
+      + ttl (known after apply)
+    }
+
+  # aws_ecr_repository.backend will be created
+  + resource "aws_ecr_repository" "backend" {
+      + arn                  = (known after apply)
+      + force_delete         = true
+      + id                   = (known after apply)
+      + image_tag_mutability = "IMMUTABLE"
+      + name                 = "atlas-mike-staging/backend"
+      + registry_id          = (known after apply)
+      + repository_url       = (known after apply)
+      + tags_all             = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+
+      + image_scanning_configuration {
+          + scan_on_push = true
+        }
+    }
+
+  # aws_ecr_repository.frontend will be created
+  + resource "aws_ecr_repository" "frontend" {
+      + arn                  = (known after apply)
+      + force_delete         = true
+      + id                   = (known after apply)
+      + image_tag_mutability = "IMMUTABLE"
+      + name                 = "atlas-mike-staging/frontend"
+      + registry_id          = (known after apply)
+      + repository_url       = (known after apply)
+      + tags_all             = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+
+      + image_scanning_configuration {
+          + scan_on_push = true
+        }
+    }
+
+  # aws_ecs_cluster.mike will be created
+  + resource "aws_ecs_cluster" "mike" {
+      + arn      = (known after apply)
+      + id       = (known after apply)
+      + name     = "atlas-mike-staging-cluster"
+      + tags_all = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+
+      + setting {
+          + name  = "containerInsights"
+          + value = "enabled"
+        }
+    }
+
+  # aws_iam_role.github_deploy will be created
+  + resource "aws_iam_role" "github_deploy" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = "sts:AssumeRoleWithWebIdentity"
+                      + Condition = {
+                          + StringEquals = {
+                              + "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+                            }
+                          + StringLike   = {
+                              + "token.actions.githubusercontent.com:sub" = "repo:Edu-Carone-SA/mike:*"
+                            }
+                        }
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Federated = "arn:aws:iam::136770599935:oidc-provider/token.actions.githubusercontent.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = "atlas-mike-staging-github-deploy"
+      + name_prefix           = (known after apply)
+      + path                  = "/"
+      + tags_all              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # aws_iam_role.task will be created
+  + resource "aws_iam_role" "task" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = "sts:AssumeRole"
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "ecs-tasks.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = "atlas-mike-staging-task"
+      + name_prefix           = (known after apply)
+      + path                  = "/"
+      + tags_all              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # aws_iam_role.task_execution will be created
+  + resource "aws_iam_role" "task_execution" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = "sts:AssumeRole"
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "ecs-tasks.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = "atlas-mike-staging-task-execution"
+      + name_prefix           = (known after apply)
+      + path                  = "/"
+      + tags_all              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # aws_iam_role_policy.github_deploy will be created
+  + resource "aws_iam_role_policy" "github_deploy" {
+      + id          = (known after apply)
+      + name        = "atlas-mike-staging-deploy-permissions"
+      + name_prefix = (known after apply)
+      + policy      = (known after apply)
+      + role        = (known after apply)
+    }
+
+  # aws_iam_role_policy.task_execution_secrets will be created
+  + resource "aws_iam_role_policy" "task_execution_secrets" {
+      + id          = (known after apply)
+      + name        = "atlas-mike-staging-secrets-read"
+      + name_prefix = (known after apply)
+      + policy      = (known after apply)
+      + role        = (known after apply)
+    }
+
+  # aws_iam_role_policy.task_s3 will be created
+  + resource "aws_iam_role_policy" "task_s3" {
+      + id          = (known after apply)
+      + name        = "atlas-mike-staging-s3-access"
+      + name_prefix = (known after apply)
+      + policy      = (known after apply)
+      + role        = (known after apply)
+    }
+
+  # aws_iam_role_policy_attachment.task_execution will be created
+  + resource "aws_iam_role_policy_attachment" "task_execution" {
+      + id         = (known after apply)
+      + policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      + role       = "atlas-mike-staging-task-execution"
+    }
+
+  # aws_lb.mike will be created
+  + resource "aws_lb" "mike" {
+      + arn                                                          = (known after apply)
+      + arn_suffix                                                   = (known after apply)
+      + client_keep_alive                                            = 3600
+      + desync_mitigation_mode                                       = "defensive"
+      + dns_name                                                     = (known after apply)
+      + drop_invalid_header_fields                                   = false
+      + enable_deletion_protection                                   = false
+      + enable_http2                                                 = true
+      + enable_tls_version_and_cipher_suite_headers                  = false
+      + enable_waf_fail_open                                         = false
+      + enable_xff_client_port                                       = false
+      + enable_zonal_shift                                           = false
+      + enforce_security_group_inbound_rules_on_private_link_traffic = (known after apply)
+      + id                                                           = (known after apply)
+      + idle_timeout                                                 = 60
+      + internal                                                     = false
+      + ip_address_type                                              = (known after apply)
+      + load_balancer_type                                           = "application"
+      + name                                                         = "atlas-mike-staging-alb"
+      + name_prefix                                                  = (known after apply)
+      + preserve_host_header                                         = false
+      + security_groups                                              = (known after apply)
+      + subnets                                                      = [
+          + "subnet-007cb2635c10eca48",
+          + "subnet-0185ebeda08b3c0d7",
+          + "subnet-05549d7007b3f5eb0",
+          + "subnet-0bebb07a8edf20dc8",
+          + "subnet-0cddc994238e903e3",
+          + "subnet-0db6af51d78fa3025",
+        ]
+      + tags                                                         = {
+          + "Name" = "atlas-mike-staging-alb"
+        }
+      + tags_all                                                     = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Name"               = "atlas-mike-staging-alb"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + vpc_id                                                       = (known after apply)
+      + xff_header_processing_mode                                   = "append"
+      + zone_id                                                      = (known after apply)
+
+      + subnet_mapping (known after apply)
+    }
+
+  # aws_lb_listener.http will be created
+  + resource "aws_lb_listener" "http" {
+      + arn                                                                   = (known after apply)
+      + id                                                                    = (known after apply)
+      + load_balancer_arn                                                     = (known after apply)
+      + port                                                                  = 80
+      + protocol                                                              = "HTTP"
+      + routing_http_request_x_amzn_mtls_clientcert_header_name               = (known after apply)
+      + routing_http_request_x_amzn_mtls_clientcert_issuer_header_name        = (known after apply)
+      + routing_http_request_x_amzn_mtls_clientcert_leaf_header_name          = (known after apply)
+      + routing_http_request_x_amzn_mtls_clientcert_serial_number_header_name = (known after apply)
+      + routing_http_request_x_amzn_mtls_clientcert_subject_header_name       = (known after apply)
+      + routing_http_request_x_amzn_mtls_clientcert_validity_header_name      = (known after apply)
+      + routing_http_request_x_amzn_tls_cipher_suite_header_name              = (known after apply)
+      + routing_http_request_x_amzn_tls_version_header_name                   = (known after apply)
+      + routing_http_response_access_control_allow_credentials_header_value   = (known after apply)
+      + routing_http_response_access_control_allow_headers_header_value       = (known after apply)
+      + routing_http_response_access_control_allow_methods_header_value       = (known after apply)
+      + routing_http_response_access_control_allow_origin_header_value        = (known after apply)
+      + routing_http_response_access_control_expose_headers_header_value      = (known after apply)
+      + routing_http_response_access_control_max_age_header_value             = (known after apply)
+      + routing_http_response_content_security_policy_header_value            = (known after apply)
+      + routing_http_response_server_enabled                                  = (known after apply)
+      + routing_http_response_strict_transport_security_header_value          = (known after apply)
+      + routing_http_response_x_content_type_options_header_value             = (known after apply)
+      + routing_http_response_x_frame_options_header_value                    = (known after apply)
+      + ssl_policy                                                            = (known after apply)
+      + tags_all                                                              = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + tcp_idle_timeout_seconds                                              = (known after apply)
+
+      + default_action {
+          + order            = (known after apply)
+          + target_group_arn = (known after apply)
+          + type             = "forward"
+        }
+
+      + mutual_authentication (known after apply)
+    }
+
+  # aws_lb_listener_rule.supabase will be created
+  + resource "aws_lb_listener_rule" "supabase" {
+      + arn          = (known after apply)
+      + id           = (known after apply)
+      + listener_arn = (known after apply)
+      + priority     = 50
+      + tags_all     = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+
+      + action {
+          + order            = (known after apply)
+          + target_group_arn = (known after apply)
+          + type             = "forward"
+        }
+
+      + condition {
+          + path_pattern {
+              + values = [
+                  + "/supabase/*",
+                ]
+            }
+        }
+    }
+
+  # aws_lb_target_group.backend will be created
+  + resource "aws_lb_target_group" "backend" {
+      + arn                                = (known after apply)
+      + arn_suffix                         = (known after apply)
+      + connection_termination             = (known after apply)
+      + deregistration_delay               = "300"
+      + id                                 = (known after apply)
+      + ip_address_type                    = (known after apply)
+      + lambda_multi_value_headers_enabled = false
+      + load_balancer_arns                 = (known after apply)
+      + load_balancing_algorithm_type      = (known after apply)
+      + load_balancing_anomaly_mitigation  = (known after apply)
+      + load_balancing_cross_zone_enabled  = (known after apply)
+      + name                               = "atlas-mike-stg-backend-tg"
+      + name_prefix                        = (known after apply)
+      + port                               = 3001
+      + preserve_client_ip                 = (known after apply)
+      + protocol                           = "HTTP"
+      + protocol_version                   = (known after apply)
+      + proxy_protocol_v2                  = false
+      + slow_start                         = 0
+      + tags_all                           = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + target_type                        = "ip"
+      + vpc_id                             = "vpc-0c0ae5e34f87f4399"
+
+      + health_check {
+          + enabled             = true
+          + healthy_threshold   = 2
+          + interval            = 30
+          + matcher             = "200"
+          + path                = "/health"
+          + port                = "traffic-port"
+          + protocol            = "HTTP"
+          + timeout             = 5
+          + unhealthy_threshold = 3
+        }
+
+      + stickiness (known after apply)
+
+      + target_failover (known after apply)
+
+      + target_group_health (known after apply)
+
+      + target_health_state (known after apply)
+    }
+
+  # aws_lb_target_group.frontend will be created
+  + resource "aws_lb_target_group" "frontend" {
+      + arn                                = (known after apply)
+      + arn_suffix                         = (known after apply)
+      + connection_termination             = (known after apply)
+      + deregistration_delay               = "300"
+      + id                                 = (known after apply)
+      + ip_address_type                    = (known after apply)
+      + lambda_multi_value_headers_enabled = false
+      + load_balancer_arns                 = (known after apply)
+      + load_balancing_algorithm_type      = (known after apply)
+      + load_balancing_anomaly_mitigation  = (known after apply)
+      + load_balancing_cross_zone_enabled  = (known after apply)
+      + name                               = "atlas-mike-stg-frontend-tg"
+      + name_prefix                        = (known after apply)
+      + port                               = 3000
+      + preserve_client_ip                 = (known after apply)
+      + protocol                           = "HTTP"
+      + protocol_version                   = (known after apply)
+      + proxy_protocol_v2                  = false
+      + slow_start                         = 0
+      + tags_all                           = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + target_type                        = "ip"
+      + vpc_id                             = "vpc-0c0ae5e34f87f4399"
+
+      + health_check {
+          + enabled             = true
+          + healthy_threshold   = 2
+          + interval            = 30
+          + matcher             = "200-399"
+          + path                = "/"
+          + port                = "traffic-port"
+          + protocol            = "HTTP"
+          + timeout             = 5
+          + unhealthy_threshold = 3
+        }
+
+      + stickiness (known after apply)
+
+      + target_failover (known after apply)
+
+      + target_group_health (known after apply)
+
+      + target_health_state (known after apply)
+    }
+
+  # aws_lb_target_group.supabase will be created
+  + resource "aws_lb_target_group" "supabase" {
+      + arn                                = (known after apply)
+      + arn_suffix                         = (known after apply)
+      + connection_termination             = (known after apply)
+      + deregistration_delay               = "300"
+      + id                                 = (known after apply)
+      + ip_address_type                    = (known after apply)
+      + lambda_multi_value_headers_enabled = false
+      + load_balancer_arns                 = (known after apply)
+      + load_balancing_algorithm_type      = (known after apply)
+      + load_balancing_anomaly_mitigation  = (known after apply)
+      + load_balancing_cross_zone_enabled  = (known after apply)
+      + name                               = "atlas-mike-stg-sup-tg"
+      + name_prefix                        = (known after apply)
+      + port                               = 8000
+      + preserve_client_ip                 = (known after apply)
+      + protocol                           = "HTTP"
+      + protocol_version                   = (known after apply)
+      + proxy_protocol_v2                  = false
+      + slow_start                         = 0
+      + tags_all                           = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + target_type                        = "ip"
+      + vpc_id                             = "vpc-0c0ae5e34f87f4399"
+
+      + health_check {
+          + enabled             = true
+          + healthy_threshold   = 2
+          + interval            = 30
+          + matcher             = "200-499"
+          + path                = "/"
+          + port                = "traffic-port"
+          + protocol            = "HTTP"
+          + timeout             = 5
+          + unhealthy_threshold = 3
+        }
+
+      + stickiness (known after apply)
+
+      + target_failover (known after apply)
+
+      + target_group_health (known after apply)
+
+      + target_health_state (known after apply)
+    }
+
+  # aws_s3_bucket.documents will be created
+  + resource "aws_s3_bucket" "documents" {
+      + acceleration_status         = (known after apply)
+      + acl                         = (known after apply)
+      + arn                         = (known after apply)
+      + bucket                      = "atlas-mike-staging-documents"
+      + bucket_domain_name          = (known after apply)
+      + bucket_prefix               = (known after apply)
+      + bucket_regional_domain_name = (known after apply)
+      + force_destroy               = false
+      + hosted_zone_id              = (known after apply)
+      + id                          = (known after apply)
+      + object_lock_enabled         = (known after apply)
+      + policy                      = (known after apply)
+      + region                      = (known after apply)
+      + request_payer               = (known after apply)
+      + tags_all                    = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + website_domain              = (known after apply)
+      + website_endpoint            = (known after apply)
+
+      + cors_rule (known after apply)
+
+      + grant (known after apply)
+
+      + lifecycle_rule (known after apply)
+
+      + logging (known after apply)
+
+      + object_lock_configuration (known after apply)
+
+      + replication_configuration (known after apply)
+
+      + server_side_encryption_configuration (known after apply)
+
+      + versioning (known after apply)
+
+      + website (known after apply)
+    }
+
+  # aws_s3_bucket.tfstate will be created
+  + resource "aws_s3_bucket" "tfstate" {
+      + acceleration_status         = (known after apply)
+      + acl                         = (known after apply)
+      + arn                         = (known after apply)
+      + bucket                      = "atlas-mike-staging-tfstate"
+      + bucket_domain_name          = (known after apply)
+      + bucket_prefix               = (known after apply)
+      + bucket_regional_domain_name = (known after apply)
+      + force_destroy               = false
+      + hosted_zone_id              = (known after apply)
+      + id                          = (known after apply)
+      + object_lock_enabled         = (known after apply)
+      + policy                      = (known after apply)
+      + region                      = (known after apply)
+      + request_payer               = (known after apply)
+      + tags_all                    = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + website_domain              = (known after apply)
+      + website_endpoint            = (known after apply)
+
+      + cors_rule (known after apply)
+
+      + grant (known after apply)
+
+      + lifecycle_rule (known after apply)
+
+      + logging (known after apply)
+
+      + object_lock_configuration (known after apply)
+
+      + replication_configuration (known after apply)
+
+      + server_side_encryption_configuration (known after apply)
+
+      + versioning (known after apply)
+
+      + website (known after apply)
+    }
+
+  # aws_s3_bucket_lifecycle_configuration.documents will be created
+  + resource "aws_s3_bucket_lifecycle_configuration" "documents" {
+      + bucket                                 = (known after apply)
+      + expected_bucket_owner                  = (known after apply)
+      + id                                     = (known after apply)
+      + transition_default_minimum_object_size = "all_storage_classes_128K"
+
+      + rule {
+          + id     = "abort-incomplete-multipart"
+          + status = "Enabled"
+            # (1 unchanged attribute hidden)
+
+          + abort_incomplete_multipart_upload {
+              + days_after_initiation = 1
+            }
+        }
+    }
+
+  # aws_s3_bucket_public_access_block.documents will be created
+  + resource "aws_s3_bucket_public_access_block" "documents" {
+      + block_public_acls       = true
+      + block_public_policy     = true
+      + bucket                  = (known after apply)
+      + id                      = (known after apply)
+      + ignore_public_acls      = true
+      + restrict_public_buckets = true
+    }
+
+  # aws_s3_bucket_public_access_block.tfstate will be created
+  + resource "aws_s3_bucket_public_access_block" "tfstate" {
+      + block_public_acls       = true
+      + block_public_policy     = true
+      + bucket                  = (known after apply)
+      + id                      = (known after apply)
+      + ignore_public_acls      = true
+      + restrict_public_buckets = true
+    }
+
+  # aws_s3_bucket_server_side_encryption_configuration.documents will be created
+  + resource "aws_s3_bucket_server_side_encryption_configuration" "documents" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+
+      + rule {
+          + apply_server_side_encryption_by_default {
+              + sse_algorithm     = "AES256"
+                # (1 unchanged attribute hidden)
+            }
+        }
+    }
+
+  # aws_s3_bucket_server_side_encryption_configuration.tfstate will be created
+  + resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+
+      + rule {
+          + apply_server_side_encryption_by_default {
+              + sse_algorithm     = "AES256"
+                # (1 unchanged attribute hidden)
+            }
+        }
+    }
+
+  # aws_s3_bucket_versioning.documents will be created
+  + resource "aws_s3_bucket_versioning" "documents" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+
+      + versioning_configuration {
+          + mfa_delete = (known after apply)
+          + status     = "Enabled"
+        }
+    }
+
+  # aws_s3_bucket_versioning.tfstate will be created
+  + resource "aws_s3_bucket_versioning" "tfstate" {
+      + bucket = (known after apply)
+      + id     = (known after apply)
+
+      + versioning_configuration {
+          + mfa_delete = (known after apply)
+          + status     = "Enabled"
+        }
+    }
+
+  # aws_secretsmanager_secret.app will be created
+  + resource "aws_secretsmanager_secret" "app" {
+      + arn                            = (known after apply)
+      + description                    = "Application secrets for Mike staging environment"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "atlas-mike-staging-app-secrets"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags_all                       = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+
+      + replica (known after apply)
+    }
+
+  # aws_security_group.alb will be created
+  + resource "aws_security_group" "alb" {
+      + arn                    = (known after apply)
+      + description            = "Allow HTTP/HTTPS from internet"
+      + egress                 = [
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 0
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "-1"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + id                     = (known after apply)
+      + ingress                = [
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 443
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "tcp"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 443
+                # (1 unchanged attribute hidden)
+            },
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 80
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "tcp"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 80
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + name                   = "atlas-mike-staging-alb-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags_all               = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + vpc_id                 = "vpc-0c0ae5e34f87f4399"
+    }
+
+  # aws_security_group.backend will be created
+  + resource "aws_security_group" "backend" {
+      + arn                    = (known after apply)
+      + description            = "Allow traffic from ALB and frontend to backend"
+      + egress                 = [
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 0
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "-1"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + id                     = (known after apply)
+      + ingress                = [
+          + {
+              + cidr_blocks      = []
+              + from_port        = 3001
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "tcp"
+              + security_groups  = (known after apply)
+              + self             = false
+              + to_port          = 3001
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + name                   = "atlas-mike-staging-backend-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags_all               = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + vpc_id                 = "vpc-0c0ae5e34f87f4399"
+    }
+
+  # aws_security_group.frontend will be created
+  + resource "aws_security_group" "frontend" {
+      + arn                    = (known after apply)
+      + description            = "Allow traffic from ALB to frontend"
+      + egress                 = [
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 0
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "-1"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + id                     = (known after apply)
+      + ingress                = [
+          + {
+              + cidr_blocks      = []
+              + from_port        = 3000
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "tcp"
+              + security_groups  = (known after apply)
+              + self             = false
+              + to_port          = 3000
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + name                   = "atlas-mike-staging-frontend-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags_all               = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + vpc_id                 = "vpc-0c0ae5e34f87f4399"
+    }
+
+  # aws_security_group.supabase will be created
+  + resource "aws_security_group" "supabase" {
+      + arn                    = (known after apply)
+      + description            = "Allow traffic from ALB to supabase (Kong)"
+      + egress                 = [
+          + {
+              + cidr_blocks      = [
+                  + "0.0.0.0/0",
+                ]
+              + from_port        = 0
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "-1"
+              + security_groups  = []
+              + self             = false
+              + to_port          = 0
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + id                     = (known after apply)
+      + ingress                = [
+          + {
+              + cidr_blocks      = []
+              + from_port        = 8000
+              + ipv6_cidr_blocks = []
+              + prefix_list_ids  = []
+              + protocol         = "tcp"
+              + security_groups  = (known after apply)
+              + self             = false
+              + to_port          = 8000
+                # (1 unchanged attribute hidden)
+            },
+        ]
+      + name                   = "atlas-mike-staging-supabase-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags_all               = {
+          + "CostCenter"         = "atlas-governance"
+          + "DataClassification" = "synthetic-only"
+          + "Environment"        = "staging"
+          + "ManagedBy"          = "terraform"
+          + "Owner"              = "mimosa-malpassada"
+          + "Project"            = "atlas-mike"
+        }
+      + vpc_id                 = "vpc-0c0ae5e34f87f4399"
+    }
+
+Plan: 36 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + alb_dns_name            = (known after apply)
+  + backend_tg_arn          = (known after apply)
+  + documents_bucket        = (known after apply)
+  + ecr_backend_uri         = (known after apply)
+  + ecr_frontend_uri        = (known after apply)
+  + ecs_cluster_name        = "atlas-mike-staging-cluster"
+  + frontend_tg_arn         = (known after apply)
+  + frontend_url            = (known after apply)
+  + github_deploy_role_arn  = (known after apply)
+  + secrets_arn             = (known after apply)
+  + task_execution_role_arn = (known after apply)
+  + task_role_arn           = (known after apply)

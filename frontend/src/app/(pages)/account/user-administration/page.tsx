@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Shield, UserPlus, KeyRound, Ban, CheckCircle, LogOut, Copy, Check } from "lucide-react";
+import { Loader2, Shield, UserPlus, KeyRound, Ban, CheckCircle, LogOut, Copy, Check, AlertTriangle } from "lucide-react";
 import {
     listAdminUsers,
     createAdminUser,
@@ -25,6 +25,7 @@ export default function UserAdministrationPage() {
     const [newRole, setNewRole] = useState("member");
     const [tempPasswordInfo, setTempPasswordInfo] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+    const [confirmAction, setConfirmAction] = useState<{ type: "disable" | "reset" | "revoke"; user: AdminUser } | null>(null);
 
     const loadUsers = useCallback(async () => {
         setLoading(true);
@@ -52,7 +53,7 @@ export default function UserAdministrationPage() {
         try {
             const result = await createAdminUser(newEmail.trim(), newRole);
             setTempPasswordInfo(
-                `User created: ${result.email}\nTemp password: ${result.tempPassword}`,
+                `User created: ${result.user.email}\nTemporary password: ${result.temporaryPassword}`,
             );
             setNewEmail("");
             setNewRole("member");
@@ -74,6 +75,7 @@ export default function UserAdministrationPage() {
             );
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to change role");
+            await loadUsers();
         } finally {
             setActionLoading(null);
         }
@@ -92,6 +94,7 @@ export default function UserAdministrationPage() {
             setError(e instanceof Error ? e.message : "Failed to disable user");
         } finally {
             setActionLoading(null);
+            setConfirmAction(null);
         }
     };
 
@@ -116,12 +119,13 @@ export default function UserAdministrationPage() {
         try {
             const result = await resetUserPassword(id);
             setTempPasswordInfo(
-                `Password reset for: ${email}\nNew temp password: ${result.tempPassword}`,
+                `Password reset for: ${email}\nNew temporary password: ${result.temporaryPassword}`,
             );
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to reset password");
         } finally {
             setActionLoading(null);
+            setConfirmAction(null);
         }
     };
 
@@ -133,6 +137,7 @@ export default function UserAdministrationPage() {
             setError(e instanceof Error ? e.message : "Failed to revoke sessions");
         } finally {
             setActionLoading(null);
+            setConfirmAction(null);
         }
     };
 
@@ -176,6 +181,9 @@ export default function UserAdministrationPage() {
             {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {error}
+                    <button onClick={() => setError(null)} className="ml-2 underline text-xs">
+                        Dismiss
+                    </button>
                 </div>
             )}
 
@@ -186,7 +194,7 @@ export default function UserAdministrationPage() {
                             {tempPasswordInfo}
                         </pre>
                         <button
-                            onClick={() => copyToClipboard(tempPasswordInfo)}
+                            onClick={() => copyToClipboard(tempPasswordInfo.split("\n").pop()?.replace("Temporary password: ", "").replace("New temporary password: ", "") || "")}
                             className="shrink-0"
                         >
                             {copied ? (
@@ -200,8 +208,47 @@ export default function UserAdministrationPage() {
                         onClick={() => setTempPasswordInfo(null)}
                         className="mt-2 text-xs text-amber-700 underline"
                     >
-                        Dismiss
+                        Dismiss — password will not be shown again
                     </button>
+                </div>
+            )}
+
+            {confirmAction && (
+                <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-orange-900">
+                                {confirmAction.type === "disable" && `Disable ${confirmAction.user.email}?`}
+                                {confirmAction.type === "reset" && `Reset password for ${confirmAction.user.email}?`}
+                                {confirmAction.type === "revoke" && `Revoke all sessions for ${confirmAction.user.email}?`}
+                            </p>
+                            <p className="text-xs text-orange-700 mt-1">
+                                {confirmAction.type === "disable" && "User will lose access immediately. Sessions will be revoked."}
+                                {confirmAction.type === "reset" && "A new temporary password will be generated. Old password stops working."}
+                                {confirmAction.type === "revoke" && "User will need to log in again."}
+                            </p>
+                            <div className="flex gap-2 mt-3">
+                                <button
+                                    onClick={() => {
+                                        if (confirmAction.type === "disable") handleDisable(confirmAction.user.id);
+                                        if (confirmAction.type === "reset") handleResetPassword(confirmAction.user.id, confirmAction.user.email);
+                                        if (confirmAction.type === "revoke") handleRevokeSessions(confirmAction.user.id);
+                                    }}
+                                    disabled={!!actionLoading}
+                                    className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                                >
+                                    {actionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm"}
+                                </button>
+                                <button
+                                    onClick={() => setConfirmAction(null)}
+                                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -251,6 +298,7 @@ export default function UserAdministrationPage() {
                                 <th className="pb-2 pr-4">Email</th>
                                 <th className="pb-2 pr-4">Role</th>
                                 <th className="pb-2 pr-4">Status</th>
+                                <th className="pb-2 pr-4">Created</th>
                                 <th className="pb-2 pr-4">Last Login</th>
                                 <th className="pb-2 pr-4">Actions</th>
                             </tr>
@@ -301,6 +349,13 @@ export default function UserAdministrationPage() {
                                         )}
                                     </td>
                                     <td className="py-3 pr-4 text-xs text-gray-500">
+                                        {user.createdAt
+                                            ? new Date(
+                                                  user.createdAt,
+                                              ).toLocaleDateString()
+                                            : "—"}
+                                    </td>
+                                    <td className="py-3 pr-4 text-xs text-gray-500">
                                         {user.lastLoginAt
                                             ? new Date(
                                                   user.lastLoginAt,
@@ -312,7 +367,7 @@ export default function UserAdministrationPage() {
                                             {user.status === "active" ? (
                                                 <button
                                                     onClick={() =>
-                                                        handleDisable(user.id)
+                                                        setConfirmAction({ type: "disable", user })
                                                     }
                                                     disabled={
                                                         actionLoading ===
@@ -340,10 +395,7 @@ export default function UserAdministrationPage() {
                                             )}
                                             <button
                                                 onClick={() =>
-                                                    handleResetPassword(
-                                                        user.id,
-                                                        user.email,
-                                                    )
+                                                    setConfirmAction({ type: "reset", user })
                                                 }
                                                 disabled={
                                                     actionLoading ===
@@ -356,9 +408,7 @@ export default function UserAdministrationPage() {
                                             </button>
                                             <button
                                                 onClick={() =>
-                                                    handleRevokeSessions(
-                                                        user.id,
-                                                    )
+                                                    setConfirmAction({ type: "revoke", user })
                                                 }
                                                 disabled={
                                                     actionLoading ===
