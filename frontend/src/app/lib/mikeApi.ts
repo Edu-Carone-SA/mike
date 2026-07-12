@@ -227,7 +227,31 @@ export interface UserProfile {
     tabularModel: string;
     mfaOnLogin: boolean;
     legalResearchUs: boolean;
+    role: string;
+    status: string;
     apiKeyStatus: ApiKeyStatus;
+}
+
+export interface AdminUser {
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    createdAt: string;
+    lastLoginAt: string | null;
+    disabledAt: string | null;
+}
+
+export interface AdminUserListResponse {
+    users: AdminUser[];
+}
+
+export interface AdminCreateUserResponse {
+    id: string;
+    email: string;
+    role: string;
+    status: string;
+    tempPassword: string;
 }
 
 export interface UserLookupResult {
@@ -238,6 +262,56 @@ export interface UserLookupResult {
 
 export async function getUserProfile(): Promise<UserProfile> {
     return apiRequest<UserProfile>("/user/profile");
+}
+
+// === Admin API ===
+
+export async function listAdminUsers(): Promise<AdminUserListResponse> {
+    return apiRequest<AdminUserListResponse>("/admin/users");
+}
+
+export async function createAdminUser(
+    email: string,
+    role: string,
+): Promise<AdminCreateUserResponse> {
+    return apiRequest<AdminCreateUserResponse>("/admin/users", {
+        method: "POST",
+        body: JSON.stringify({ email, role }),
+    });
+}
+
+export async function changeUserRole(
+    id: string,
+    role: string,
+): Promise<{ id: string; role: string }> {
+    return apiRequest(`/admin/users/${id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+    });
+}
+
+export async function disableUser(
+    id: string,
+): Promise<{ id: string; status: string }> {
+    return apiRequest(`/admin/users/${id}/disable`, { method: "PATCH" });
+}
+
+export async function enableUser(
+    id: string,
+): Promise<{ id: string; status: string }> {
+    return apiRequest(`/admin/users/${id}/enable`, { method: "PATCH" });
+}
+
+export async function resetUserPassword(
+    id: string,
+): Promise<{ id: string; tempPassword: string }> {
+    return apiRequest(`/admin/users/${id}/reset-password`, { method: "POST" });
+}
+
+export async function revokeUserSessions(
+    id: string,
+): Promise<{ id: string; sessionsRevoked: boolean }> {
+    return apiRequest(`/admin/users/${id}/revoke-sessions`, { method: "POST" });
 }
 
 export async function lookupUserByEmail(

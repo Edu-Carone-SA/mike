@@ -31,6 +31,8 @@ interface UserProfile {
     tabularModel: string;
     mfaOnLogin: boolean;
     legalResearchUs: boolean;
+    role: string;
+    status: string;
     apiKeys: ApiKeyState;
     keySuffixes: Record<string, string | null>;
     editable: Record<string, boolean>;
@@ -130,6 +132,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                 tabularModel: "deepseek-v4-flash",
                 mfaOnLogin: false,
                 legalResearchUs: true,
+                role: "member",
+                status: "active",
                 apiKeys: emptyApiKeys(),
                 keySuffixes: {},
                 editable: {},

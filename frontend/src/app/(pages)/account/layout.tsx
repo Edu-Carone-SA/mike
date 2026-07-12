@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { useUserProfile } from "@/app/contexts/UserProfileContext";
 import { accountTabButtonClassName } from "./accountStyles";
 
 interface TabDef {
     id: string;
     label: string;
     href: string;
+    adminOnly?: boolean;
 }
 
-const TABS: TabDef[] = [
+const ALL_TABS: TabDef[] = [
     { id: "general", label: "General", href: "/account" },
     { id: "features", label: "Features", href: "/account/features" },
     {
@@ -24,6 +26,12 @@ const TABS: TabDef[] = [
     { id: "models", label: "Model Preferences", href: "/account/models" },
     { id: "api-keys", label: "API Keys", href: "/account/api-keys" },
     { id: "connectors", label: "Connectors", href: "/account/connectors" },
+    {
+        id: "user-administration",
+        label: "User Administration",
+        href: "/account/user-administration",
+        adminOnly: true,
+    },
 ];
 
 export default function AccountLayout({
@@ -34,6 +42,15 @@ export default function AccountLayout({
     const router = useRouter();
     const pathname = usePathname();
     const { isAuthenticated, authLoading } = useAuth();
+    const { profile } = useUserProfile();
+
+    const TABS = useMemo(
+        () =>
+            ALL_TABS.filter(
+                (tab) => !tab.adminOnly || profile?.role === "admin",
+            ),
+        [profile?.role],
+    );
 
     useEffect(() => {
         if (!authLoading && !isAuthenticated) {
