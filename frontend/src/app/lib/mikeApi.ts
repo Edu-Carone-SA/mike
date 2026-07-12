@@ -290,10 +290,30 @@ export type ApiKeyState = Record<
 
 export type ApiKeyStatus = Record<ApiKeyProvider, boolean> & {
     sources?: Partial<Record<ApiKeyProvider, ApiKeySource>>;
+    keySuffixes?: Partial<Record<ApiKeyProvider, string | null>>;
+    editable?: Partial<Record<ApiKeyProvider, boolean>>;
 };
 
 export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
     return apiRequest<ApiKeyStatus>("/user/api-keys");
+}
+
+export type ApiKeyHealthStatus =
+    | "healthy"
+    | "invalid"
+    | "rate_limited"
+    | "quota_exceeded"
+    | "provider_unavailable"
+    | "network_error"
+    | "not_configured";
+
+export async function checkApiKeyHealth(
+    provider: ApiKeyProvider,
+): Promise<{ status: ApiKeyHealthStatus }> {
+    return apiRequest<{ status: ApiKeyHealthStatus }>(
+        `/user/api-keys/${provider}/health`,
+        { method: "POST" },
+    );
 }
 
 export async function saveApiKey(

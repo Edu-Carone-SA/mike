@@ -9,10 +9,13 @@ import {
     OPENAI_LOW_MODELS,
     DEEPSEEK_LOW_MODELS,
     resolveModel,
+    completeText,
 } from "../lib/llm";
 import {
     type ApiKeyStatus,
     getUserApiKeyStatus,
+    getUserApiKeySuffix,
+    getUserApiKeys as getStoredUserApiKeys,
     hasEnvApiKey,
     normalizeApiKeyProvider,
     saveUserApiKey,
@@ -530,12 +533,31 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
     const userId = res.locals.userId as string;
     const db = createServerSupabase();
     const apiKeyStatus = await getUserApiKeyStatus(userId, db);
+
+    // Attach keySuffix and editable flag for each provider
+    const keySuffixes: Record<string, string | null> = {};
+    for (const provider of ["claude", "gemini", "openai", "openrouter", "deepseek", "courtlistener"] as const) {
+        keySuffixes[provider] = await getUserApiKeySuffix(userId, provider, db);
+    }
+    const enrichedStatus = {
+        ...apiKeyStatus,
+        keySuffixes,
+        editable: {
+            claude: !hasEnvApiKey("claude"),
+            gemini: !hasEnvApiKey("gemini"),
+            openai: !hasEnvApiKey("openai"),
+            openrouter: !hasEnvApiKey("openrouter"),
+            deepseek: !hasEnvApiKey("deepseek"),
+            courtlistener: !hasEnvApiKey("courtlistener"),
+        } as Record<string, boolean>,
+    };
+
     const { data, error } = await loadProfile(db, userId, {
         repairMissing: true,
         apiKeyStatus,
     });
     if (error) return void res.status(500).json({ detail: error.message });
-    res.json({ ...data, apiKeyStatus });
+    res.json({ ...data, apiKeyStatus: enrichedStatus });
 });
 
 // PATCH /user/profile
@@ -649,6 +671,82 @@ userRouter.put(
                 error: detail,
             });
             res.status(500).json({ detail });
+        }
+    },
+);
+
+// POST /user/api-keys/:provider/health
+// Lightweight health check: sends a minimal prompt to the provider and reports
+// whether the key is valid. Does not log the key or the response content.
+userRouter.post(
+    "/api-keys/:provider/health",
+    requireAuth,
+    async (req, res) => {
+        const provider = normalizeApiKeyProvider(req.params.provider);
+        if (!provider)
+            return void res
+                .status(400)
+                .json({ detail: "Unsupported provider" });
+
+        const db = createServerSupabase();
+        try {
+            const apiKeys = await getStoredUserApiKeys(res.locals.userId as string, db);
+            const key = apiKeys[provider];
+            if (!key?.trim()) {
+                return void res.json({ status: "not_configured" });
+            }
+
+            // Use completeText with a minimal prompt to test the key.
+            // 10s timeout, no retries on auth errors.
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10_000);
+
+            try {
+                await Promise.race([
+                    completeText({
+                        model: provider === "deepseek"
+                            ? "deepseek-v4-flash"
+                            : provider === "claude"
+                              ? "claude-haiku-4-5"
+                              : provider === "openai"
+                                ? "gpt-5.4-lite"
+                                : "gemini-3.1-flash-lite-preview",
+                        user: "Say OK",
+                        maxTokens: 5,
+                        apiKeys,
+                    }),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error("timeout")), 10_000),
+                    ),
+                ]);
+                clearTimeout(timeout);
+                res.json({ status: "healthy" });
+            } catch (err) {
+                clearTimeout(timeout);
+                const msg = err instanceof Error ? err.message : String(err);
+                const lowerMsg = msg.toLowerCase();
+
+                if (lowerMsg.includes("401") || lowerMsg.includes("unauthorized") || lowerMsg.includes("invalid api key")) {
+                    res.json({ status: "invalid" });
+                } else if (lowerMsg.includes("429") || lowerMsg.includes("rate limit")) {
+                    res.json({ status: "rate_limited" });
+                } else if (lowerMsg.includes("quota") || lowerMsg.includes("insufficient")) {
+                    res.json({ status: "quota_exceeded" });
+                } else if (lowerMsg.includes("timeout") || lowerMsg.includes("abort")) {
+                    res.json({ status: "network_error" });
+                } else if (lowerMsg.includes("503") || lowerMsg.includes("502") || lowerMsg.includes("unavailable")) {
+                    res.json({ status: "provider_unavailable" });
+                } else {
+                    res.json({ status: "network_error" });
+                }
+            }
+        } catch (err) {
+            const detail = errorMessage(err);
+            console.error("[user/api-keys] health check failed", {
+                provider,
+                error: detail,
+            });
+            res.status(500).json({ detail: "Health check failed" });
         }
     },
 );

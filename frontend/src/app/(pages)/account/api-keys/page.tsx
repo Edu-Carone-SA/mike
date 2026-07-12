@@ -8,7 +8,8 @@ import {
     MfaVerificationPopup,
     needsMfaVerification,
 } from "@/app/components/popups/MfaVerificationPopup";
-import { isMfaRequiredError } from "@/app/lib/mikeApi";
+import { isMfaRequiredError, checkApiKeyHealth } from "@/app/lib/mikeApi";
+import type { ApiKeyHealthStatus } from "@/app/lib/mikeApi";
 import {
     accountGlassIconButtonClassName,
     accountGlassInputClassName,
@@ -16,26 +17,6 @@ import {
 import { AccountSection } from "../AccountSection";
 
 const MODEL_API_KEY_FIELDS = [
-    {
-        provider: "claude",
-        label: "Anthropic (Claude) API Key",
-        placeholder: "sk-ant-...",
-    },
-    {
-        provider: "gemini",
-        label: "Google (Gemini) API Key",
-        placeholder: "AI...",
-    },
-    {
-        provider: "openai",
-        label: "OpenAI API Key",
-        placeholder: "sk-...",
-    },
-    {
-        provider: "openrouter",
-        label: "OpenRouter API Key",
-        placeholder: "sk-or-...",
-    },
     {
         provider: "deepseek",
         label: "DeepSeek API Key",
@@ -79,6 +60,8 @@ export default function ApiKeysPage() {
                                 profile?.apiKeys[field.provider].source ===
                                 "env"
                             }
+                            keySuffix={profile?.keySuffixes?.[field.provider]}
+                            provider={field.provider}
                             onSave={(value) =>
                                 updateApiKey(
                                     field.provider,
@@ -107,6 +90,8 @@ export default function ApiKeysPage() {
                         isServerConfigured={
                             profile?.apiKeys[field.provider].source === "env"
                         }
+                        keySuffix={profile?.keySuffixes?.[field.provider]}
+                        provider={field.provider}
                         onSave={(value) =>
                             updateApiKey(field.provider, value.trim() || null)
                         }
@@ -124,6 +109,8 @@ function ApiKeyField({
     placeholder,
     hasSavedKey,
     isServerConfigured,
+    keySuffix,
+    provider,
     onSave,
     onRemove,
 }: {
@@ -132,6 +119,8 @@ function ApiKeyField({
     placeholder: string;
     hasSavedKey: boolean;
     isServerConfigured: boolean;
+    keySuffix?: string | null;
+    provider: string;
     onSave: (value: string) => Promise<boolean>;
     onRemove: () => Promise<boolean>;
 }) {
@@ -139,6 +128,8 @@ function ApiKeyField({
     const [reveal, setReveal] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [healthStatus, setHealthStatus] = useState<ApiKeyHealthStatus | null>(null);
+    const [healthLoading, setHealthLoading] = useState(false);
     const [pendingMfaAction, setPendingMfaAction] = useState<
         "save" | "remove" | null
     >(null);
@@ -148,6 +139,18 @@ function ApiKeyField({
     }, [hasSavedKey]);
 
     const dirty = value.trim().length > 0;
+
+    const handleHealthCheck = async () => {
+        setHealthLoading(true);
+        try {
+            const result = await checkApiKeyHealth(provider as Parameters<typeof checkApiKeyHealth>[0]);
+            setHealthStatus(result.status);
+        } catch {
+            setHealthStatus("network_error");
+        } finally {
+            setHealthLoading(false);
+        }
+    };
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -184,6 +187,7 @@ function ApiKeyField({
             }
             const ok = await onRemove();
             if (!ok) alert(`Failed to remove ${label}.`);
+            setHealthStatus(null);
         } catch (error) {
             if (isMfaRequiredError(error)) {
                 setPendingMfaAction("remove");
@@ -205,12 +209,50 @@ function ApiKeyField({
         }
     };
 
+    const healthLabel = (() => {
+        if (!healthStatus) return null;
+        const labels: Record<ApiKeyHealthStatus, string> = {
+            healthy: "Healthy",
+            invalid: "Invalid",
+            rate_limited: "Rate limited",
+            quota_exceeded: "Quota exceeded",
+            provider_unavailable: "Provider unavailable",
+            network_error: "Network error",
+            not_configured: "Not configured",
+        };
+        return labels[healthStatus];
+    })();
+
+    const healthColor = healthStatus === "healthy" ? "text-green-600" : healthStatus ? "text-red-500" : "";
+
     return (
         <>
             <div className="px-4 py-5">
-                <label className="text-sm font-medium text-gray-700 block mb-2">
-                    {label}
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700 block">
+                        {label}
+                    </label>
+                    {isServerConfigured && (
+                        <span className="text-xs font-medium text-blue-600">
+                            Configured by Atlas
+                        </span>
+                    )}
+                    {!isServerConfigured && hasSavedKey && keySuffix && (
+                        <span className="text-xs text-gray-500">
+                            Personal key ending in ••••{keySuffix}
+                        </span>
+                    )}
+                    {!isServerConfigured && !hasSavedKey && (
+                        <span className="text-xs text-gray-400">
+                            Not configured
+                        </span>
+                    )}
+                </div>
+                {healthLabel && (
+                    <p className={`text-xs mb-2 ${healthColor}`}>
+                        {healthLabel}
+                    </p>
+                )}
                 {description && (
                     <p className="text-sm text-gray-500 mb-3">{description}</p>
                 )}
@@ -219,10 +261,10 @@ function ApiKeyField({
                         <Input
                             type={reveal ? "text" : "password"}
                             value={value}
-                            onChange={(e) => setValue(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setValue(e.target.value)}
                             placeholder={
                                 isServerConfigured
-                                    ? "Server .env key configured"
+                                    ? "Managed by server — editing disabled"
                                     : hasSavedKey
                                       ? "Saved key hidden"
                                       : placeholder
@@ -249,6 +291,16 @@ function ApiKeyField({
                         )}
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
+                        {!isServerConfigured && (hasSavedKey || true) && (
+                            <button
+                                type="button"
+                                onClick={handleHealthCheck}
+                                disabled={isSaving || healthLoading || isServerConfigured || (!hasSavedKey && !isServerConfigured)}
+                                className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:text-gray-300"
+                            >
+                                {healthLoading ? "Testing..." : "Test key"}
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={handleSave}

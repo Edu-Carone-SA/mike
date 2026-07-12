@@ -114,6 +114,9 @@ export async function getUserApiKeyStatus(
     userId: string,
     db: Db = createServerSupabase(),
 ): Promise<ApiKeyStatus> {
+    // Start with env-key status. This is always available even if the
+    // database query fails, so the frontend can show env-configured
+    // providers regardless of PostgREST availability.
     const status: ApiKeyStatus = {
         claude: false,
         gemini: false,
@@ -138,11 +141,19 @@ export async function getUserApiKeyStatus(
         }
     }
 
+    // Query user-stored keys. If this fails, return partial status with env
+    // keys intact — do NOT discard env-key status or throw.
     const { data, error } = await db
         .from("user_api_keys")
         .select("provider")
         .eq("user_id", userId);
-    if (error) throw error;
+    if (error) {
+        console.error("[user-api-keys] status query failed, returning partial", {
+            error: error.message,
+            code: error.code,
+        });
+        return status;
+    }
 
     for (const row of data ?? []) {
         const provider = normalizeApiKeyProvider(String(row.provider));
@@ -153,6 +164,30 @@ export async function getUserApiKeyStatus(
     }
 
     return status;
+}
+
+/**
+ * Returns a masked suffix (last 4 chars) of a user-stored API key.
+ * Returns null if no key is stored or if the key is env-managed.
+ */
+export async function getUserApiKeySuffix(
+    userId: string,
+    provider: ApiKeyProvider,
+    db: Db = createServerSupabase(),
+): Promise<string | null> {
+    if (hasEnvApiKey(provider)) return null;
+
+    const { data, error } = await db
+        .from("user_api_keys")
+        .select("encrypted_key, iv, auth_tag")
+        .eq("user_id", userId)
+        .eq("provider", provider)
+        .maybeSingle();
+    if (error || !data) return null;
+
+    const decrypted = decrypt(data as EncryptedKeyRow);
+    if (!decrypted || decrypted.length < 4) return null;
+    return decrypted.slice(-4);
 }
 
 export async function getUserApiKeys(
