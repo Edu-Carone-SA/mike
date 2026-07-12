@@ -80,6 +80,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
         ...restInit,
         headers: {
             Accept: "application/json",
+            "Content-Type": "application/json",
             ...authHeaders,
             ...(initHeaders as Record<string, string> | undefined),
         },
