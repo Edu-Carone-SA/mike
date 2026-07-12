@@ -7,6 +7,7 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - 'infra/**'
+      - '.github/workflows/deploy-staging.yml'
   workflow_dispatch:
     inputs:
       image_tag:
