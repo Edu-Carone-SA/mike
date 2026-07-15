@@ -220,6 +220,13 @@ tabularRouter.post("/prompt", requireAuth, async (req, res) => {
 
     try {
         const { title_model, api_keys } = await getUserModelSettings(userId);
+        const missingKey = missingModelApiKey(title_model, api_keys);
+        if (missingKey) {
+            return void res.status(422).json({
+                code: "missing_api_key",
+                ...missingKey,
+            });
+        }
         const raw = await completeText({
             model: title_model,
             systemPrompt:
