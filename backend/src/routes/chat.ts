@@ -576,6 +576,18 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         if (!streamFinished) streamAbort.abort();
     });
 
+    // SSE keepalive: send a comment every 15s to prevent ALB idle timeout (60s default)
+    // from dropping the connection during long tool executions (e.g., generate_docx)
+    const keepalive = setInterval(() => {
+        if (!streamFinished) {
+            try {
+                res.write(": keepalive\n\n");
+            } catch {
+                // socket already closed
+            }
+        }
+    }, 15000);
+
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
 
@@ -709,6 +721,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
     } finally {
         streamFinished = true;
+        clearInterval(keepalive);
         res.end();
     }
 });
