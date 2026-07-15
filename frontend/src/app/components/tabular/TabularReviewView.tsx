@@ -761,7 +761,8 @@ export function TRView({ reviewId, projectId }: Props) {
                                                     }),
                                                 disabled:
                                                     columns.length === 0 ||
-                                                    documents.length === 0,
+                                                    documents.length === 0 ||
+                                                    !cells.some((c) => c.status === "done"),
                                             },
                                             {
                                                 label: "Clear results",
