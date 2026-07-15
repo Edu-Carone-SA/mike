@@ -308,9 +308,10 @@ function validateOpenSourceWorkflow(workflow: WorkflowRecord): string | null {
 workflowsRouter.get("/", requireAuth, asyncRoute(async (req, res) => {
   const userId = res.locals.userId as string;
   const userEmail = res.locals.userEmail as string | undefined;
-  const { type } = req.query as { type?: string };
+  const { type, q } = req.query as { type?: string; q?: string };
   const db = createServerSupabase();
   const workflowType = typeof type === "string" && type ? type : null;
+  const searchQuery = typeof q === "string" && q.trim() ? q.trim().toLowerCase() : null;
 
   const { data, error } = await db.rpc("get_workflows_overview", {
     p_user_id: userId,
@@ -328,7 +329,20 @@ workflowsRouter.get("/", requireAuth, asyncRoute(async (req, res) => {
     (workflow) => !SYSTEM_WORKFLOW_IDS.has(workflow.id),
   ).map(withDatabaseWorkflow);
 
-  res.json([...systemWorkflows, ...databaseWorkflows]);
+  const allWorkflows = [...systemWorkflows, ...databaseWorkflows];
+
+  // Client-side search filtering — the RPC doesn't support text search,
+  // so we filter here. Safe because workflow counts are small (<100).
+  if (searchQuery) {
+    const filtered = allWorkflows.filter((wf) => {
+      const title = (wf.metadata?.title ?? "").toString().toLowerCase();
+      const skillMd = (wf.skill_md ?? "").toString().toLowerCase();
+      return title.includes(searchQuery) || skillMd.includes(searchQuery);
+    });
+    return void res.json(filtered);
+  }
+
+  res.json(allWorkflows);
 }));
 
 // POST /workflows
