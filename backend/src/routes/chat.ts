@@ -518,13 +518,20 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             askInputsResponse,
         );
     } else if (lastUser) {
-        await db.from("chat_messages").insert({
-            chat_id: chatId,
-            role: "user",
-            content: lastUser.content,
-            files: lastUser.files ?? null,
-            workflow: lastUser.workflow ?? null,
-        });
+        const { error: insertError } = await db
+            .from("chat_messages")
+            .insert({
+                chat_id: chatId,
+                role: "user",
+                content: lastUser.content,
+                files: lastUser.files ?? null,
+            });
+        if (insertError) {
+            console.error(
+                "[chat/stream] failed to persist user message",
+                safeErrorLog(insertError),
+            );
+        }
     }
 
     const { docIndex, docStore } = await buildDocContext(
