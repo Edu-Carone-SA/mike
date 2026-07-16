@@ -15,6 +15,7 @@ import {
     Pencil,
     Trash2,
     WandSparkles,
+    AlertCircle,
 } from "lucide-react";
 
 import {
@@ -77,6 +78,7 @@ export function TRView({ reviewId, projectId }: Props) {
     const [columns, setColumns] = useState<ColumnConfig[]>([]);
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState<string | null>(null);
     const [savingColumn, setSavingColumn] = useState(false);
     const [savingColumnsConfig, setSavingColumnsConfig] = useState(false);
     const [addColOpen, setAddColOpen] = useState(false);
@@ -312,6 +314,11 @@ export function TRView({ reviewId, projectId }: Props) {
         // If columns changed since last save, update the review first
         if (columns.length === 0) return;
 
+        setGenerationError(null);
+
+        // Only block on API key if profile has loaded (apiKeys is non-null).
+        // If profile hasn't loaded yet, let the backend validate — it returns
+        // 422 with a structured error that we handle below.
         if (apiKeys && !isModelAvailable(tabularModel, apiKeys)) {
             setApiKeyModalProvider(getModelProvider(tabularModel));
             return;
@@ -404,6 +411,10 @@ export function TRView({ reviewId, projectId }: Props) {
             }
         } catch (err) {
             console.error("Generation failed", err);
+            const msg = err instanceof Error && err.message
+                ? err.message
+                : "Generation failed. Please try again.";
+            setGenerationError(msg);
         } finally {
             setGenerating(false);
         }
@@ -830,6 +841,20 @@ export function TRView({ reviewId, projectId }: Props) {
                         },
                     ]}
                 />
+
+                {generationError && (
+                    <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                        <span className="flex-1">{generationError}</span>
+                        <button
+                            type="button"
+                            onClick={() => setGenerationError(null)}
+                            className="text-red-400 hover:text-red-600"
+                        >
+                            ×
+                        </button>
+                    </div>
+                )}
 
                 {/* Toolbar */}
                 <TableToolbar
