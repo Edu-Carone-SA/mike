@@ -39,7 +39,7 @@ export function AddDocumentsModal({
     allowMultiple = true,
     projectId,
 }: Props) {
-    const { loading, standaloneDocuments, projects } = useDirectoryData(open);
+    const { loading, standaloneDocuments, projects, refetch } = useDirectoryData(open);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [uploading, setUploading] = useState(false);
     const [uploadingFilenames, setUploadingFilenames] = useState<string[]>([]);
@@ -135,6 +135,7 @@ export function AddDocumentsModal({
                 ),
             );
             invalidateDirectoryCache();
+            refetch();
             setExtraUploadedDocs((prev) => [...uploaded, ...prev]);
             uploaded.forEach((d) =>
                 setSelectedIds((prev) => new Set([...prev, d.id])),

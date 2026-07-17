@@ -544,8 +544,27 @@ tabularRouter.patch("/:reviewId", requireAuth, async (req, res) => {
         const activeColumns = Array.isArray(req.body.columns_config)
             ? req.body.columns_config
             : (updatedReview.columns_config ?? []);
+
+        // Normalise column objects: accept both `index` and `column_index`
+        // as the property name, and fall back to the array position.
+        // This prevents "null value in column 'column_index'" errors when
+        // columns_config was stored in a slightly different shape (e.g.
+        // from a workflow template) or when document_ids is sent without
+        // columns_config in the same request.
+        const normalisedColumns = activeColumns.map(
+            (col: Record<string, unknown>, i: number) => ({
+                ...col,
+                index:
+                    typeof col.index === "number"
+                        ? col.index
+                        : typeof col.column_index === "number"
+                          ? col.column_index
+                          : i,
+            }),
+        );
+
         const newCells = documentIds.flatMap((documentId) =>
-            activeColumns
+            normalisedColumns
                 .filter(
                     (column: { index: number }) =>
                         !existingKeys.has(`${documentId}:${column.index}`),
