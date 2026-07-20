@@ -405,13 +405,30 @@ export async function buildDocContext(
   }
 
   const ids = [...documentIds];
+  console.log("[buildDocContext] collected document IDs", {
+    count: ids.length,
+    ids,
+    userId,
+    chatId,
+  });
   if (ids.length > 0) {
-    const { data: docs } = await db
+    const { data: docs, error: docError } = await db
       .from("documents")
       .select("id, current_version_id, status")
       .in("id", ids)
       .eq("user_id", userId)
       .eq("status", "ready");
+
+    console.log("[buildDocContext] DB query result", {
+      requestedIds: ids,
+      returnedCount: docs?.length ?? 0,
+      error: docError?.message ?? null,
+      returnedDocs: docs?.map((d: { id: string; status: string; current_version_id: string | null }) => ({
+        id: d.id,
+        status: d.status,
+        current_version_id: d.current_version_id,
+      })),
+    });
 
     const docList = (docs ?? []) as unknown as {
       id: string;
@@ -422,9 +439,22 @@ export async function buildDocContext(
       storage_path?: string | null;
     }[];
     await attachActiveVersionPaths(db, docList);
+    console.log("[buildDocContext] after attachActiveVersionPaths", {
+      docCount: docList.length,
+      docs: docList.map((d) => ({
+        id: d.id,
+        filename: d.filename,
+        storage_path: d.storage_path ? "(set)" : "(null)",
+        file_type: d.file_type,
+        current_version_id: d.current_version_id,
+      })),
+    });
     for (let i = 0; i < docList.length; i++) {
       const doc = docList[i];
-      if (!doc.storage_path) continue;
+      if (!doc.storage_path) {
+        console.log(`[buildDocContext] SKIP doc ${doc.id} — no storage_path`);
+        continue;
+      }
       const docLabel = `doc-${i}`;
       const filename = doc.filename?.trim() || "Untitled document";
       docIndex[docLabel] = {
@@ -438,17 +468,14 @@ export async function buildDocContext(
         file_type: doc.file_type ?? "",
         filename,
       });
+      console.log(`[buildDocContext] registered ${docLabel}: ${filename} (doc_id=${doc.id})`);
     }
   }
 
-  devLog(
-    "[buildDocContext] available docs:",
-    Object.entries(docIndex).map(([label, info]) => ({
-      label,
-      filename: info.filename,
-      document_id: info.document_id,
-    })),
-  );
+  console.log("[buildDocContext] final docIndex", {
+    keys: Object.keys(docIndex),
+    docStoreKeys: [...docStore.keys()],
+  });
   return { docIndex, docStore };
 }
 

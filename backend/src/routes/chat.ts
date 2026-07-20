@@ -559,6 +559,22 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         db,
         chatId,
     );
+    console.log("[chat/stream] docContext built", {
+        userId,
+        chatId,
+        docIndexKeys: Object.keys(docIndex),
+        docStoreKeys: [...docStore.keys()],
+        docIndexEntries: Object.entries(docIndex).map(([k, v]) => ({
+            slug: k,
+            document_id: v.document_id,
+            filename: v.filename,
+        })),
+        attachedDocumentsCount: attachedDocuments?.length ?? 0,
+        attachedDocuments: attachedDocuments?.map((d) => ({
+            document_id: d.document_id,
+            filename: d.filename,
+        })),
+    });
     const docAvailability = Object.entries(docIndex).map(([doc_id, info]) => ({
         doc_id,
         filename: info.filename,
