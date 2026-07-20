@@ -953,6 +953,10 @@ export function useAssistantChat({
                 return acc;
               }, []);
               if (items.length > 0) {
+                // Finalize any in-flight streaming content so the partial
+                // text doesn't appear truncated when the ask_inputs UI
+                // replaces the streaming indicator.
+                finalizeStreamingContent();
                 pushEvent({ type: "ask_inputs", items });
               }
               continue;

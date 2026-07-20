@@ -17,6 +17,9 @@ import { tmpdir } from "os";
 
 const execAsync = promisify(exec);
 
+/** Max buffer for exec commands (50 MB) — default 1 MB is too small for OCR output. */
+const EXEC_MAX_BUFFER = 50 * 1024 * 1024;
+
 const isDev = process.env.NODE_ENV !== "production";
 function devLog(...args: Parameters<typeof console.log>) {
   if (isDev) console.log(...args);
@@ -73,6 +76,7 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
     const imgPrefix = join(tmpDir, "page");
     await execAsync(
       `pdftoppm -png -r ${OCR_DPI} "${pdfPath}" "${imgPrefix}"`,
+      { maxBuffer: EXEC_MAX_BUFFER },
     );
 
     const files = (await readdir(tmpDir))
@@ -97,6 +101,7 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
       try {
         const { stdout } = await execAsync(
           `tesseract "${imgPath}" - -l ${OCR_LANG} 2>/dev/null`,
+          { maxBuffer: EXEC_MAX_BUFFER },
         );
         parts.push(`[Page ${i + 1}]\n${stdout.trim()}`);
       } catch {
