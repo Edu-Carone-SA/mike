@@ -4,14 +4,19 @@
  * Uses system-level `tesseract` + `pdftoppm` (poppler-utils) to extract
  * text from PDFs that have no text layer (e.g., scanned documents).
  *
+ * Images are piped to tesseract via stdin rather than file paths — this
+ * avoids Leptonica file-I/O issues on some platforms (notably macOS) and
+ * is equally reliable on Linux/Docker.
+ *
  * If the tools are not installed (e.g., local dev without the Docker
  * image), all functions gracefully return empty strings — the caller
  * falls through to the original (empty) extraction result.
  */
 
+import { spawn } from "child_process";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { mkdtemp, rm, writeFile, readdir } from "fs/promises";
+import { mkdtemp, rm, writeFile, readdir, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -55,10 +60,33 @@ async function checkOcrTools(): Promise<boolean> {
 }
 
 /**
+ * Run tesseract on an image buffer, piping the image via stdin.
+ * Returns the recognised text, or empty string on failure.
+ */
+function tesseractStdin(imageBuf: Buffer): Promise<string> {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      "tesseract",
+      ["stdin", "stdout", "-l", OCR_LANG],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (chunk) => chunks.push(chunk));
+    proc.on("error", () => resolve(""));
+    proc.on("close", () => {
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    proc.stdin.write(imageBuf);
+    proc.stdin.end();
+  });
+}
+
+/**
  * Run OCR on a PDF buffer. Converts each page to a PNG image using
- * `pdftoppm`, then recognises text on each image using `tesseract`.
+ * `pdftoppm`, then recognises text on each image using `tesseract`
+ * (piping via stdin for cross-platform compatibility).
  *
- * Returns the extracted text (with `[Page N (OCR)]` markers), or an
+ * Returns the extracted text (with `[Page N]` markers), or an
  * empty string if the tools are unavailable or OCR fails.
  */
 export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
@@ -73,6 +101,8 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
     await writeFile(pdfPath, Buffer.from(buf));
 
     // Convert PDF to PNG images at the configured DPI.
+    // pdftoppm writes files to disk (it doesn't support stdout for
+    // multi-page output), but tesseract reads via stdin.
     const imgPrefix = join(tmpDir, "page");
     await execAsync(
       `pdftoppm -png -r ${OCR_DPI} "${pdfPath}" "${imgPrefix}"`,
@@ -97,13 +127,10 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
 
     const parts: string[] = [];
     for (let i = 0; i < pagesToProcess; i++) {
-      const imgPath = join(tmpDir, files[i]);
       try {
-        const { stdout } = await execAsync(
-          `tesseract "${imgPath}" - -l ${OCR_LANG} 2>/dev/null`,
-          { maxBuffer: EXEC_MAX_BUFFER },
-        );
-        parts.push(`[Page ${i + 1}]\n${stdout.trim()}`);
+        const imgBuf = await readFile(join(tmpDir, files[i]));
+        const text = await tesseractStdin(imgBuf);
+        parts.push(`[Page ${i + 1}]\n${text.trim()}`);
       } catch {
         devLog(`[ocr] tesseract failed on page ${i + 1}, skipping`);
       }
