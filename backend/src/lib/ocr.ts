@@ -148,7 +148,13 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
 /**
  * Returns true if the extracted text is too sparse to be useful and
  * OCR should be attempted as a fallback.
+ *
+ * Strips `[Page N]` markers (added by extractPdfText) before measuring,
+ * because a multi-page scanned PDF can produce 100+ chars of markers
+ * with zero actual content, which would otherwise exceed the threshold
+ * and prevent OCR from running.
  */
 export function shouldTryOcr(text: string): boolean {
-  return text.trim().length < MIN_TEXT_LENGTH_FOR_OCR;
+  const stripped = text.replace(/\[Page \d+\]\s*/g, "").trim();
+  return stripped.length < MIN_TEXT_LENGTH_FOR_OCR;
 }
