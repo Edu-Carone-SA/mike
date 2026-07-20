@@ -1495,6 +1495,10 @@ export async function readDocumentContent(
     let text: string;
     const fileType = docInfo.file_type?.toLowerCase?.() ?? "";
     if (fileType === "pdf") {
+      // extractPdfText (pdfjs) transfers ownership of the ArrayBuffer
+      // via new Uint8Array(buf), detaching it. Copy first so the
+      // original is available for OCR fallback.
+      const pdfCopy = raw.slice(0);
       text = await extractPdfText(raw);
       console.log(
         `[read_document] pdf extracted length=${text.length} for filename="${docInfo.filename}"`,
@@ -1503,7 +1507,7 @@ export async function readDocumentContent(
         console.log(
           `[read_document] sparse text (${text.length} chars), trying OCR fallback for filename="${docInfo.filename}"`,
         );
-        const ocrText = await ocrPdfBuffer(raw);
+        const ocrText = await ocrPdfBuffer(pdfCopy);
         console.log(
           `[read_document] OCR returned length=${ocrText.length} for filename="${docInfo.filename}"`,
         );
@@ -1558,6 +1562,8 @@ export async function readDocumentContent(
         pdfBuf.byteOffset,
         pdfBuf.byteOffset + pdfBuf.byteLength,
       ) as ArrayBuffer;
+      // extractPdfText detaches the ArrayBuffer; copy for OCR fallback.
+      const legacyPdfCopy = legacyPdfBuf.slice(0);
       text = await extractPdfText(legacyPdfBuf);
       devLog(
         `[read_document] legacy Office PDF extraction length=${text.length} for filename="${docInfo.filename}"`,
@@ -1566,7 +1572,7 @@ export async function readDocumentContent(
         devLog(
           `[read_document] sparse text (${text.length} chars), trying OCR fallback for filename="${docInfo.filename}"`,
         );
-        const ocrText = await ocrPdfBuffer(legacyPdfBuf);
+        const ocrText = await ocrPdfBuffer(legacyPdfCopy);
         if (ocrText.trim().length > text.trim().length) {
           text = ocrText;
           devLog(
