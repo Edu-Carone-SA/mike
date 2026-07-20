@@ -173,7 +173,8 @@ export function buildMessages(
         const slug = f.document_id
           ? slugByDocumentId.get(f.document_id)
           : undefined;
-        return slug ? `- ${slug}: ${f.filename}` : `- ${f.filename}`;
+        const label = f.filename || "Untitled document";
+        return slug ? `- ${slug}: ${label}` : `- ${label}`;
       });
       content = `[The user attached the following document(s) to this message:\n${lines.join("\n")}]\n\n${content}`;
     }

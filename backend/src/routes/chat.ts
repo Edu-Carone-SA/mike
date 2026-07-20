@@ -108,6 +108,24 @@ function parseOptionalModel(value: unknown):
     return { ok: true, model: value.trim() };
 }
 
+function parseAttachedDocuments(
+    value: unknown,
+): { filename: string; document_id: string }[] | null {
+    if (!Array.isArray(value) || value.length === 0) return null;
+    const result: { filename: string; document_id: string }[] = [];
+    for (const item of value) {
+        if (!item || typeof item !== "object") continue;
+        const row = item as Record<string, unknown>;
+        if (
+            typeof row.document_id === "string" &&
+            typeof row.filename === "string"
+        ) {
+            result.push({ filename: row.filename, document_id: row.document_id });
+        }
+    }
+    return result.length > 0 ? result : null;
+}
+
 async function validateAccessibleProjectId(
     projectId: string | null,
     userId: string,
@@ -441,6 +459,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     const askInputsResponse = parseAskInputsResponsePayload(
         body.ask_inputs_response,
     );
+    const attachedDocuments = parseAttachedDocuments(body.attached_documents);
 
     const messages = parsedMessages.messages;
     const chat_id = parsedChatId.chatId;
@@ -544,6 +563,28 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         doc_id,
         filename: info.filename,
     }));
+
+    // Surface user-attached docs in the system prompt so the LLM knows
+    // which documents to focus on for this turn (same as projectChat).
+    let systemPromptExtra: string | undefined;
+    if (attachedDocuments?.length) {
+        const slugByDocumentId = new Map<string, string>();
+        for (const [slug, info] of Object.entries(docIndex)) {
+            if (info.document_id)
+                slugByDocumentId.set(info.document_id, slug);
+        }
+        const lines = attachedDocuments.map((d) => {
+            const slug = slugByDocumentId.get(d.document_id);
+            const label = d.filename || "Untitled document";
+            return slug ? `- ${slug}: ${label}` : `- ${label}`;
+        });
+        systemPromptExtra =
+            `USER-ATTACHED DOCUMENTS FOR THIS TURN:\n` +
+            `The user has attached the following document(s) directly to their latest message. ` +
+            `Treat these as the primary focus of the request unless their message clearly says otherwise.\n` +
+            lines.join("\n");
+    }
+
     const enrichedMessages = await enrichWithPriorEvents(
         messages,
         chatId,
@@ -557,7 +598,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     const apiMessages = buildMessages(
         enrichedMessages,
         docAvailability,
-        undefined,
+        systemPromptExtra,
         undefined,
         legalResearchUs,
     );

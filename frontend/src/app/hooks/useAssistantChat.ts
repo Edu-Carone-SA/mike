@@ -363,6 +363,8 @@ export function useAssistantChat({
             messages: apiMessages,
             chat_id: chatId,
             model,
+            attached_documents:
+              attachedDocs.length > 0 ? attachedDocs : undefined,
             ask_inputs_response: opts?.askInputsResponse,
             signal: controller.signal,
           }));

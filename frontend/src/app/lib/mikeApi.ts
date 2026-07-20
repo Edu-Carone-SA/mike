@@ -951,6 +951,7 @@ export async function streamChat(payload: {
     chat_id?: string;
     project_id?: string;
     model?: string;
+    attached_documents?: { filename: string; document_id: string }[];
     ask_inputs_response?: {
         responses: (
             | {
