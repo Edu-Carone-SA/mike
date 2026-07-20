@@ -38,8 +38,14 @@ function log(...args: Parameters<typeof console.log>) {
   console.log(...args);
 }
 
-/** Minimum text length (chars) below which we try OCR as a fallback. */
-const MIN_TEXT_LENGTH_FOR_OCR = 10;
+/**
+ * Minimum average chars per page below which we try OCR as a fallback.
+ * A normal text page has 500+ chars. A scanned page with residual text
+ * (page numbers, watermarks) typically has < 50 chars. 50 is a safe
+ * threshold that catches scanned docs without triggering OCR on short
+ * but legitimate text PDFs (e.g., a 1-page cover letter with 100 chars).
+ */
+const MIN_CHARS_PER_PAGE_FOR_OCR = 50;
 
 /** OCR language pack. English + Portuguese covers Atlas legal docs. */
 const OCR_LANG = process.env.OCR_LANG ?? "eng+por";
@@ -184,11 +190,20 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
  * OCR should be attempted as a fallback.
  *
  * Strips `[Page N]` markers (added by extractPdfText) before measuring,
- * because a multi-page scanned PDF can produce 100+ chars of markers
- * with zero actual content, which would otherwise exceed the threshold
- * and prevent OCR from running.
+ * then applies a per-page threshold: if the average text per page is
+ * below MIN_CHARS_PER_PAGE, the PDF is likely scanned (images with
+ * residual text like page numbers or watermarks).
+ *
+ * A multi-page scanned PDF can produce 100+ chars of markers plus
+ * 50-200 chars of residual text (page numbers, headers), which would
+ * exceed a simple absolute threshold but still indicate a scanned doc.
  */
 export function shouldTryOcr(text: string): boolean {
+  // Count [Page N] markers to estimate page count.
+  const pageMarkers = text.match(/\[Page \d+\]/g) ?? [];
+  const pageCount = Math.max(pageMarkers.length, 1);
+  // Strip markers to measure actual text content.
   const stripped = text.replace(/\[Page \d+\]\s*/g, "").trim();
-  return stripped.length < MIN_TEXT_LENGTH_FOR_OCR;
+  const avgCharsPerPage = stripped.length / pageCount;
+  return avgCharsPerPage < MIN_CHARS_PER_PAGE_FOR_OCR;
 }
