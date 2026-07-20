@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { useFetchSingleDoc } from "@/app/hooks/useFetchSingleDoc";
 import { DocxView } from "./DocxView";
@@ -39,7 +39,7 @@ type RenderedPage = {
     textDivs: HTMLElement[];
 };
 
-export function PdfView({
+export const PdfView = React.memo(function PdfView({
     doc,
     quotes,
     quoteFocusKey,
@@ -84,12 +84,20 @@ export function PdfView({
     // highlighting via the same `quotes` API).
     const fallbackToDocx = result?.type === "docx";
 
-    // Track container width via ResizeObserver so re-renders fire on resize
+    // Track container width via ResizeObserver so re-renders fire on resize.
+    // Only update when the width changes by more than 5px to avoid
+    // micro-fluctuations (e.g., scrollbar appearance, flexbox rounding)
+    // triggering a full PDF re-render that causes visible flickering.
+    const prevWidthRef = useRef(0);
     useEffect(() => {
         const el = scrollContainerRef.current;
         if (!el) return;
         const ro = new ResizeObserver((entries) => {
-            setContainerWidth(entries[0]?.contentRect.width ?? 0);
+            const w = entries[0]?.contentRect.width ?? 0;
+            if (Math.abs(w - prevWidthRef.current) > 5) {
+                prevWidthRef.current = w;
+                setContainerWidth(w);
+            }
         });
         ro.observe(el);
         return () => ro.disconnect();
@@ -481,14 +489,16 @@ export function PdfView({
         };
     }, [result, renderPDF]);  
 
-    // Re-render at new scale when container is resized (debounced 150ms)
+    // Re-render at new scale when container is resized (debounced 250ms
+    // to prevent rapid re-renders during layout transitions that cause
+    // visible flickering — the PDF canvas is wiped and re-drawn each time).
     useEffect(() => {
         if (!pdfDocRef.current) return;
         const timer = setTimeout(() => {
             if (pdfDocRef.current) {
                 renderPDF(pdfDocRef.current, quoteListRef.current);
             }
-        }, 150);
+        }, 250);
         return () => clearTimeout(timer);
     }, [containerWidth, renderPDF]);  
 
@@ -596,4 +606,4 @@ export function PdfView({
             )}
         </div>
     );
-}
+});

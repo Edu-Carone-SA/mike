@@ -47,25 +47,41 @@ const memoryUpload = multer({
 export function singleFileUpload(fieldName: string): RequestHandler {
   return (req, res, next) => {
     memoryUpload.single(fieldName)(req, res, (err) => {
-      if (!err) return next();
+      if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return void res.status(413).json({
+              detail: `File too large. Maximum size is ${MAX_UPLOAD_SIZE_MB} MB.`,
+            });
+          }
+          if (err.code === "LIMIT_UNEXPECTED_FILE") {
+            return void res.status(415).json({
+              detail: err.message,
+            });
+          }
+          return void res.status(400).json({
+            detail: `Upload failed: ${err.message}`,
+          });
+        }
 
-      if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
-          return void res.status(413).json({
-            detail: `File too large. Maximum size is ${MAX_UPLOAD_SIZE_MB} MB.`,
-          });
-        }
-        if (err.code === "LIMIT_UNEXPECTED_FILE") {
-          return void res.status(415).json({
-            detail: err.message,
-          });
-        }
-        return void res.status(400).json({
-          detail: `Upload failed: ${err.message}`,
-        });
+        return next(err);
       }
 
-      return next(err);
+      // multer v1 stores originalname as Latin-1, but browsers send UTF-8.
+      // Re-decode to fix mojibake (e.g., "Ã³" → "ó") in filenames with
+      // non-ASCII characters.
+      if (req.file?.originalname) {
+        try {
+          req.file.originalname = Buffer.from(
+            req.file.originalname,
+            "latin1",
+          ).toString("utf8");
+        } catch {
+          // If re-decoding fails, keep the original — better than blocking upload
+        }
+      }
+
+      return next();
     });
   };
 }
