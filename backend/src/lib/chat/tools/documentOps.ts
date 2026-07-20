@@ -1496,18 +1496,21 @@ export async function readDocumentContent(
     const fileType = docInfo.file_type?.toLowerCase?.() ?? "";
     if (fileType === "pdf") {
       text = await extractPdfText(raw);
-      devLog(
+      console.log(
         `[read_document] pdf extracted length=${text.length} for filename="${docInfo.filename}"`,
       );
       if (shouldTryOcr(text)) {
-        devLog(
+        console.log(
           `[read_document] sparse text (${text.length} chars), trying OCR fallback for filename="${docInfo.filename}"`,
         );
         const ocrText = await ocrPdfBuffer(raw);
+        console.log(
+          `[read_document] OCR returned length=${ocrText.length} for filename="${docInfo.filename}"`,
+        );
         if (ocrText.trim().length > text.trim().length) {
           text = ocrText;
-          devLog(
-            `[read_document] OCR extracted length=${text.length} for filename="${docInfo.filename}"`,
+          console.log(
+            `[read_document] using OCR text, final length=${text.length} for filename="${docInfo.filename}"`,
           );
         }
       }

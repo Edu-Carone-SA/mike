@@ -30,14 +30,22 @@ function devLog(...args: Parameters<typeof console.log>) {
   if (isDev) console.log(...args);
 }
 
+/**
+ * Log to stdout in ALL environments (including production).
+ * Used for OCR diagnostics that need to be visible in CloudWatch.
+ */
+function log(...args: Parameters<typeof console.log>) {
+  console.log(...args);
+}
+
 /** Minimum text length (chars) below which we try OCR as a fallback. */
 const MIN_TEXT_LENGTH_FOR_OCR = 10;
 
 /** OCR language pack. English + Portuguese covers Atlas legal docs. */
 const OCR_LANG = process.env.OCR_LANG ?? "eng+por";
 
-/** Render DPI — 300 is the sweet spot for OCR accuracy vs. speed. */
-const OCR_DPI = 300;
+/** Render DPI — 200 is sufficient for OCR and ~2x faster than 300. */
+const OCR_DPI = 200;
 
 /** Max pages to OCR — prevents runaway processing on huge documents. */
 const OCR_MAX_PAGES = 50;
@@ -46,15 +54,19 @@ let toolsAvailable: boolean | null = null;
 
 /**
  * Check whether `tesseract` and `pdftoppm` are installed on the system.
- * The result is cached for the lifetime of the process.
+ * Uses `command -v` (POSIX builtin) instead of `which` (which may not
+ * be installed on slim Docker images). The result is cached for the
+ * lifetime of the process.
  */
 async function checkOcrTools(): Promise<boolean> {
   if (toolsAvailable !== null) return toolsAvailable;
   try {
-    await execAsync("which tesseract && which pdftoppm");
+    await execAsync("command -v tesseract && command -v pdftoppm");
     toolsAvailable = true;
-  } catch {
+    log("[ocr] tools check: tesseract and pdftoppm available");
+  } catch (err) {
     toolsAvailable = false;
+    log("[ocr] tools check FAILED — tesseract or pdftoppm not found:", String(err));
   }
   return toolsAvailable;
 }
@@ -72,8 +84,15 @@ function tesseractStdin(imageBuf: Buffer): Promise<string> {
     );
     const chunks: Buffer[] = [];
     proc.stdout.on("data", (chunk) => chunks.push(chunk));
-    proc.on("error", () => resolve(""));
-    proc.on("close", () => {
+    proc.stderr.on("data", () => {}); // swallow stderr to avoid unhandled
+    proc.on("error", (err) => {
+      log("[ocr] tesseract spawn error:", String(err));
+      resolve("");
+    });
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        log(`[ocr] tesseract exited with code ${code}`);
+      }
       resolve(Buffer.concat(chunks).toString("utf-8"));
     });
     proc.stdin.write(imageBuf);
@@ -90,8 +109,11 @@ function tesseractStdin(imageBuf: Buffer): Promise<string> {
  * empty string if the tools are unavailable or OCR fails.
  */
 export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
+  const startTime = Date.now();
+  log(`[ocr] ocrPdfBuffer called, buffer size=${buf.byteLength} bytes`);
+
   if (!(await checkOcrTools())) {
-    devLog("[ocr] tesseract/pdftoppm not available — skipping OCR");
+    log("[ocr] tesseract/pdftoppm not available — skipping OCR");
     return "";
   }
 
@@ -104,23 +126,28 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
     // pdftoppm writes files to disk (it doesn't support stdout for
     // multi-page output), but tesseract reads via stdin.
     const imgPrefix = join(tmpDir, "page");
+    log(`[ocr] running pdftoppm at ${OCR_DPI} DPI...`);
+    const ppmStart = Date.now();
     await execAsync(
       `pdftoppm -png -r ${OCR_DPI} "${pdfPath}" "${imgPrefix}"`,
       { maxBuffer: EXEC_MAX_BUFFER },
     );
+    log(`[ocr] pdftoppm done in ${Date.now() - ppmStart}ms`);
 
     const files = (await readdir(tmpDir))
       .filter((f) => f.startsWith("page-") && f.endsWith(".png"))
       .sort();
 
     if (files.length === 0) {
-      devLog("[ocr] pdftoppm produced no images");
+      log("[ocr] pdftoppm produced no images");
       return "";
     }
 
+    log(`[ocr] pdftoppm produced ${files.length} page images`);
+
     const pagesToProcess = Math.min(files.length, OCR_MAX_PAGES);
     if (files.length > OCR_MAX_PAGES) {
-      devLog(
+      log(
         `[ocr] PDF has ${files.length} pages, processing first ${OCR_MAX_PAGES} only`,
       );
     }
@@ -129,16 +156,23 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
     for (let i = 0; i < pagesToProcess; i++) {
       try {
         const imgBuf = await readFile(join(tmpDir, files[i]));
+        const pageStart = Date.now();
         const text = await tesseractStdin(imgBuf);
+        const pageMs = Date.now() - pageStart;
+        log(`[ocr] page ${i + 1}/${pagesToProcess}: ${text.trim().length} chars in ${pageMs}ms`);
         parts.push(`[Page ${i + 1}]\n${text.trim()}`);
-      } catch {
-        devLog(`[ocr] tesseract failed on page ${i + 1}, skipping`);
+      } catch (err) {
+        log(`[ocr] tesseract failed on page ${i + 1}, skipping:`, String(err));
       }
     }
 
+    const totalMs = Date.now() - startTime;
+    const totalChars = parts.join("").length;
+    log(`[ocr] complete: ${totalChars} chars from ${pagesToProcess} pages in ${totalMs}ms`);
+
     return parts.join("\n\n");
   } catch (err) {
-    devLog(`[ocr] failed: ${err}`);
+    log(`[ocr] failed:`, String(err));
     return "";
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
