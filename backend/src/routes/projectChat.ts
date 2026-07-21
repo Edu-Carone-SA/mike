@@ -107,13 +107,20 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             askInputsResponse,
         );
     } else if (lastUser) {
-        await db.from("chat_messages").insert({
-            chat_id: chatId,
-            role: "user",
-            content: lastUser.content,
-            files: lastUser.files ?? null,
-            workflow: lastUser.workflow ?? null,
-        });
+        const { error: insertError } = await db
+            .from("chat_messages")
+            .insert({
+                chat_id: chatId,
+                role: "user",
+                content: lastUser.content,
+                files: lastUser.files ?? null,
+            });
+        if (insertError) {
+            console.error(
+                "[projectChat/stream] failed to persist user message",
+                safeErrorLog(insertError),
+            );
+        }
     }
 
     const { docIndex, docStore, folderPaths } = await buildProjectDocContext(
@@ -189,6 +196,18 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
     res.on("close", () => {
         if (!streamFinished) streamAbort.abort();
     });
+
+    // SSE keepalive: send a comment every 15s to prevent ALB idle timeout
+    // from dropping the connection during long tool executions (e.g., generate_docx)
+    const keepalive = setInterval(() => {
+        if (!streamFinished) {
+            try {
+                res.write(": keepalive\n\n");
+            } catch {
+                // socket already closed
+            }
+        }
+    }, 15000);
 
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
@@ -321,6 +340,7 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         }
     } finally {
         streamFinished = true;
+        clearInterval(keepalive);
         res.end();
     }
 });

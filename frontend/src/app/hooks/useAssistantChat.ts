@@ -363,6 +363,8 @@ export function useAssistantChat({
             messages: apiMessages,
             chat_id: chatId,
             model,
+            attached_documents:
+              attachedDocs.length > 0 ? attachedDocs : undefined,
             ask_inputs_response: opts?.askInputsResponse,
             signal: controller.signal,
           }));
@@ -953,6 +955,10 @@ export function useAssistantChat({
                 return acc;
               }, []);
               if (items.length > 0) {
+                // Finalize any in-flight streaming content so the partial
+                // text doesn't appear truncated when the ask_inputs UI
+                // replaces the streaming indicator.
+                finalizeStreamingContent();
                 pushEvent({ type: "ask_inputs", items });
               }
               continue;

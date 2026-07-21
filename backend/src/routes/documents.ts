@@ -107,6 +107,42 @@ documentsRouter.delete("/:documentId", requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+// GET /single-documents/:documentId
+// Returns metadata for a single document (including version info).
+documentsRouter.get("/:documentId", requireAuth, async (req, res) => {
+  const userId = res.locals.userId as string;
+  const userEmail = res.locals.userEmail as string | undefined;
+  const { documentId } = req.params;
+  const db = createServerSupabase();
+
+  const { data: doc, error } = await db
+    .from("documents")
+    .select("*")
+    .eq("id", documentId)
+    .single();
+  if (error || !doc)
+    return void res.status(404).json({ detail: "Document not found" });
+
+  // Enforce access: owner, project member, or shared.
+  const access = await ensureDocAccess(
+    doc as { id: string; user_id: string; project_id: string | null },
+    userId,
+    userEmail,
+    db,
+  );
+  if (!access.ok)
+    return void res.status(404).json({ detail: "Document not found" });
+
+  const docs = [doc] as unknown as {
+    id: string;
+    current_version_id?: string | null;
+  }[];
+  await attachLatestVersionNumbers(db, docs);
+  await attachActiveVersionPaths(db, docs);
+
+  res.json(docs[0]);
+});
+
 // GET /single-documents/:documentId/display
 // Optional ?version_id= renders a historical version. Defaults to the
 // document's current_version_id.

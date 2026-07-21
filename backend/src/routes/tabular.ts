@@ -32,6 +32,7 @@ import {
     type UserApiKeys,
 } from "../lib/llm";
 import { getUserModelSettings } from "../lib/userSettings";
+import { hasEnvApiKey, type ApiKeyProvider } from "../lib/userApiKeys";
 import {
     checkProjectAccess,
     ensureReviewAccess,
@@ -79,6 +80,9 @@ function providerLabel(provider: Provider): string {
 function missingModelApiKey(model: string, apiKeys: UserApiKeys) {
     const provider = providerForModel(model);
     if (apiKeys[provider]?.trim()) return null;
+    // Also check env key as fallback (defensive — getUserApiKeys already includes env keys,
+    // but this guards against future refactors that might separate stored vs env keys)
+    if (hasEnvApiKey(provider as ApiKeyProvider)) return null;
     return {
         provider,
         model,
@@ -216,6 +220,13 @@ tabularRouter.post("/prompt", requireAuth, async (req, res) => {
 
     try {
         const { title_model, api_keys } = await getUserModelSettings(userId);
+        const missingKey = missingModelApiKey(title_model, api_keys);
+        if (missingKey) {
+            return void res.status(422).json({
+                code: "missing_api_key",
+                ...missingKey,
+            });
+        }
         const raw = await completeText({
             model: title_model,
             systemPrompt:
@@ -533,8 +544,27 @@ tabularRouter.patch("/:reviewId", requireAuth, async (req, res) => {
         const activeColumns = Array.isArray(req.body.columns_config)
             ? req.body.columns_config
             : (updatedReview.columns_config ?? []);
+
+        // Normalise column objects: accept both `index` and `column_index`
+        // as the property name, and fall back to the array position.
+        // This prevents "null value in column 'column_index'" errors when
+        // columns_config was stored in a slightly different shape (e.g.
+        // from a workflow template) or when document_ids is sent without
+        // columns_config in the same request.
+        const normalisedColumns = activeColumns.map(
+            (col: Record<string, unknown>, i: number) => ({
+                ...col,
+                index:
+                    typeof col.index === "number"
+                        ? col.index
+                        : typeof col.column_index === "number"
+                          ? col.column_index
+                          : i,
+            }),
+        );
+
         const newCells = documentIds.flatMap((documentId) =>
-            activeColumns
+            normalisedColumns
                 .filter(
                     (column: { index: number }) =>
                         !existingKeys.has(`${documentId}:${column.index}`),
@@ -776,7 +806,14 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
     for (const cell of cells ?? [])
         cellMap.set(`${cell.document_id}:${cell.column_index}`, cell);
 
-    const docIds = [...new Set((cells ?? []).map((c) => c.document_id))];
+    // Use document_ids from the review as the primary source of truth.
+    // Fall back to cell-derived doc IDs only if review.document_ids is not set.
+    const reviewDocIds = Array.isArray(review.document_ids)
+        ? (review.document_ids as string[])
+        : null;
+    const docIds = reviewDocIds && reviewDocIds.length > 0
+        ? reviewDocIds
+        : [...new Set((cells ?? []).map((c) => c.document_id))];
     const allowedDocIds = new Set(
         await filterAccessibleDocumentIds(docIds, userId, userEmail, db),
     );
@@ -853,6 +890,38 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
                             );
                         }
                     }
+                }
+
+                // If we have no document content, mark all pending cells as error
+                // instead of sending empty text to the LLM (which would return "Not Found")
+                if (!markdown.trim()) {
+                    for (const col of columns.filter((c) => {
+                        const cell = cellMap.get(`${docId}:${c.index}`);
+                        return !(cell?.status === "done" && cell?.content);
+                    })) {
+                        const errorMsg = !storagePath
+                            ? "Document storage path unavailable"
+                            : "Document content is empty or could not be extracted";
+                        write(
+                            `data: ${JSON.stringify({ type: "cell_update", document_id: docId, column_index: col.index, content: { summary: errorMsg, flag: "grey", reasoning: errorMsg }, status: "error" })}\n\n`,
+                        );
+                        const existingCell = cellMap.get(`${docId}:${col.index}`);
+                        if (existingCell) {
+                            await db
+                                .from("tabular_cells")
+                                .update({ status: "error", content: JSON.stringify({ summary: errorMsg, flag: "grey", reasoning: errorMsg }) })
+                                .eq("id", existingCell.id);
+                        } else {
+                            await db.from("tabular_cells").insert({
+                                review_id: reviewId,
+                                document_id: docId,
+                                column_index: col.index,
+                                status: "error",
+                                content: JSON.stringify({ summary: errorMsg, flag: "grey", reasoning: errorMsg }),
+                            });
+                        }
+                    }
+                    return;
                 }
 
                 // Filter to only columns that need processing
@@ -1668,8 +1737,23 @@ Rules:
     const processLine = async (line: string) => {
         const trimmed = line.trim();
         if (!trimmed) return;
+        // Strip markdown code fences (```json ... ```) that some LLMs add despite instructions
+        let jsonStr = trimmed;
+        const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (fenceMatch) {
+            jsonStr = fenceMatch[1].trim();
+        }
+        // If still not starting with {, try to extract the first JSON object
+        if (!jsonStr.startsWith("{")) {
+            const objMatch = jsonStr.match(/\{[\s\S]*\}/);
+            if (objMatch) {
+                jsonStr = objMatch[0];
+            } else {
+                return; // no JSON object found
+            }
+        }
         try {
-            const parsed = JSON.parse(trimmed) as {
+            const parsed = JSON.parse(jsonStr) as {
                 column_index?: unknown;
                 summary?: unknown;
                 flag?: unknown;

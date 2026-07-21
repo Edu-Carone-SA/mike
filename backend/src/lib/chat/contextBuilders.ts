@@ -173,7 +173,8 @@ export function buildMessages(
         const slug = f.document_id
           ? slugByDocumentId.get(f.document_id)
           : undefined;
-        return slug ? `- ${slug}: ${f.filename}` : `- ${f.filename}`;
+        const label = f.filename || "Untitled document";
+        return slug ? `- ${slug}: ${label}` : `- ${label}`;
       });
       content = `[The user attached the following document(s) to this message:\n${lines.join("\n")}]\n\n${content}`;
     }
@@ -361,40 +362,73 @@ export async function buildDocContext(
     }
   }
 
-  // Also pull in document_ids from prior assistant events in this chat —
-  // generated docs (generate_docx) and tracked-change edits (edit_document)
-  // aren't attached to user messages as files, so they only live in the
-  // assistant's `doc_created` / `doc_edited` events. Without this sweep
-  // the model loses access to generated docs after the turn that created
-  // them, and can't call edit_document / read_document on them.
+  // Also pull in document_ids from prior messages in this chat.
+  // Two sources:
+  // 1. Assistant events (doc_created, doc_edited) — generated docs and
+  //    tracked-change edits aren't attached to user messages as files,
+  //    so they only live in the assistant's event stream.
+  // 2. User message file attachments — on follow-up turns, the frontend
+  //    may not include `files` on all prior messages (e.g., after page
+  //    reload, state reset, or workflow chat creation). Sweeping the DB
+  //    ensures document context is never lost across turns.
   if (chatId) {
     const { data: rows } = await db
       .from("chat_messages")
-      .select("content")
-      .eq("chat_id", chatId)
-      .eq("role", "assistant");
+      .select("content, files, role")
+      .eq("chat_id", chatId);
     for (const row of rows ?? []) {
-      const content = (row as { content?: unknown }).content;
-      if (!Array.isArray(content)) continue;
-      for (const ev of content as Record<string, unknown>[]) {
-        if (
-          (ev?.type === "doc_created" || ev?.type === "doc_edited") &&
-          typeof ev.document_id === "string"
-        ) {
-          documentIds.add(ev.document_id);
+      const typedRow = row as {
+        content?: unknown;
+        files?: unknown;
+        role?: string;
+      };
+      // Sweep assistant events for generated/edited documents
+      if (typedRow.role === "assistant" && Array.isArray(typedRow.content)) {
+        for (const ev of typedRow.content as Record<string, unknown>[]) {
+          if (
+            (ev?.type === "doc_created" || ev?.type === "doc_edited") &&
+            typeof ev.document_id === "string"
+          ) {
+            documentIds.add(ev.document_id);
+          }
+        }
+      }
+      // Sweep user messages for file attachments (document_ids)
+      if (typedRow.role === "user" && Array.isArray(typedRow.files)) {
+        for (const f of typedRow.files as Record<string, unknown>[]) {
+          if (typeof f.document_id === "string") {
+            documentIds.add(f.document_id);
+          }
         }
       }
     }
   }
 
   const ids = [...documentIds];
+  console.log("[buildDocContext] collected document IDs", {
+    count: ids.length,
+    ids,
+    userId,
+    chatId,
+  });
   if (ids.length > 0) {
-    const { data: docs } = await db
+    const { data: docs, error: docError } = await db
       .from("documents")
       .select("id, current_version_id, status")
       .in("id", ids)
       .eq("user_id", userId)
       .eq("status", "ready");
+
+    console.log("[buildDocContext] DB query result", {
+      requestedIds: ids,
+      returnedCount: docs?.length ?? 0,
+      error: docError?.message ?? null,
+      returnedDocs: docs?.map((d: { id: string; status: string; current_version_id: string | null }) => ({
+        id: d.id,
+        status: d.status,
+        current_version_id: d.current_version_id,
+      })),
+    });
 
     const docList = (docs ?? []) as unknown as {
       id: string;
@@ -405,9 +439,22 @@ export async function buildDocContext(
       storage_path?: string | null;
     }[];
     await attachActiveVersionPaths(db, docList);
+    console.log("[buildDocContext] after attachActiveVersionPaths", {
+      docCount: docList.length,
+      docs: docList.map((d) => ({
+        id: d.id,
+        filename: d.filename,
+        storage_path: d.storage_path ? "(set)" : "(null)",
+        file_type: d.file_type,
+        current_version_id: d.current_version_id,
+      })),
+    });
     for (let i = 0; i < docList.length; i++) {
       const doc = docList[i];
-      if (!doc.storage_path) continue;
+      if (!doc.storage_path) {
+        console.log(`[buildDocContext] SKIP doc ${doc.id} — no storage_path`);
+        continue;
+      }
       const docLabel = `doc-${i}`;
       const filename = doc.filename?.trim() || "Untitled document";
       docIndex[docLabel] = {
@@ -421,17 +468,14 @@ export async function buildDocContext(
         file_type: doc.file_type ?? "",
         filename,
       });
+      console.log(`[buildDocContext] registered ${docLabel}: ${filename} (doc_id=${doc.id})`);
     }
   }
 
-  devLog(
-    "[buildDocContext] available docs:",
-    Object.entries(docIndex).map(([label, info]) => ({
-      label,
-      filename: info.filename,
-      document_id: info.document_id,
-    })),
-  );
+  console.log("[buildDocContext] final docIndex", {
+    keys: Object.keys(docIndex),
+    docStoreKeys: [...docStore.keys()],
+  });
   return { docIndex, docStore };
 }
 

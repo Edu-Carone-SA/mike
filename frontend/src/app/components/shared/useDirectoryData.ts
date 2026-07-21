@@ -22,6 +22,12 @@ export function useDirectoryData(enabled: boolean) {
     const [loading, setLoading] = useState(true);
     const [standaloneDocuments, setStandaloneDocuments] = useState<Document[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [refetchToken, setRefetchToken] = useState(0);
+
+    const refetch = () => {
+        invalidateDirectoryCache();
+        setRefetchToken((t) => t + 1);
+    };
 
     useEffect(() => {
         if (!enabled) return;
@@ -68,7 +74,7 @@ export function useDirectoryData(enabled: boolean) {
                 setProjects([]);
             })
             .finally(() => setLoading(false));
-    }, [enabled]);
+    }, [enabled, refetchToken]);
 
-    return { loading, standaloneDocuments, projects };
+    return { loading, standaloneDocuments, projects, refetch };
 }
