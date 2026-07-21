@@ -50,11 +50,14 @@ const MIN_CHARS_PER_PAGE_FOR_OCR = 50;
 /** OCR language pack. English + Portuguese covers Atlas legal docs. */
 const OCR_LANG = process.env.OCR_LANG ?? "eng+por";
 
-/** Render DPI — 200 is sufficient for OCR and ~2x faster than 300. */
-const OCR_DPI = 200;
+/** Render DPI — 150 is sufficient for OCR and ~2x faster than 300. */
+const OCR_DPI = 150;
 
 /** Max pages to OCR — prevents runaway processing on huge documents. */
 const OCR_MAX_PAGES = 50;
+
+/** Number of tesseract processes to run in parallel. */
+const OCR_CONCURRENCY = 4;
 
 let toolsAvailable: boolean | null = null;
 
@@ -158,19 +161,38 @@ export async function ocrPdfBuffer(buf: ArrayBuffer): Promise<string> {
       );
     }
 
-    const parts: string[] = [];
-    for (let i = 0; i < pagesToProcess; i++) {
-      try {
-        const imgBuf = await readFile(join(tmpDir, files[i]));
-        const pageStart = Date.now();
-        const text = await tesseractStdin(imgBuf);
-        const pageMs = Date.now() - pageStart;
-        log(`[ocr] page ${i + 1}/${pagesToProcess}: ${text.trim().length} chars in ${pageMs}ms`);
-        parts.push(`[Page ${i + 1}]\n${text.trim()}`);
-      } catch (err) {
-        log(`[ocr] tesseract failed on page ${i + 1}, skipping:`, String(err));
-      }
+    // Process pages in parallel batches for speed.
+    // Sequential: 11 pages × ~7s = 77s. With 4 workers: ~20s.
+    const pageFiles = files.slice(0, pagesToProcess);
+    const results: { index: number; text: string }[] = [];
+    const ocrStart = Date.now();
+
+    for (let batch = 0; batch < pageFiles.length; batch += OCR_CONCURRENCY) {
+      const batchFiles = pageFiles.slice(batch, batch + OCR_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batchFiles.map(async (file, j) => {
+          const pageIndex = batch + j;
+          try {
+            const imgBuf = await readFile(join(tmpDir, file));
+            const pageStart = Date.now();
+            const text = await tesseractStdin(imgBuf);
+            const pageMs = Date.now() - pageStart;
+            log(`[ocr] page ${pageIndex + 1}/${pagesToProcess}: ${text.trim().length} chars in ${pageMs}ms`);
+            return { index: pageIndex, text: text.trim() };
+          } catch (err) {
+            log(`[ocr] tesseract failed on page ${pageIndex + 1}, skipping:`, String(err));
+            return { index: pageIndex, text: "" };
+          }
+        }),
+      );
+      results.push(...batchResults);
     }
+
+    log(`[ocr] tesseract phase done in ${Date.now() - ocrStart}ms (${pagesToProcess} pages, ${OCR_CONCURRENCY} parallel)`);
+
+    // Sort by page index to maintain page order.
+    results.sort((a, b) => a.index - b.index);
+    const parts = results.map((r) => `[Page ${r.index + 1}]\n${r.text}`);
 
     const totalMs = Date.now() - startTime;
     const totalChars = parts.join("").length;
