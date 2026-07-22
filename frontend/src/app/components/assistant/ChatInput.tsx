@@ -31,6 +31,12 @@ import {
 } from "@/app/lib/modelAvailability";
 import type { Document, Message } from "../shared/types";
 import { cn } from "@/app/lib/utils";
+import {
+    uploadStandaloneDocument,
+    uploadProjectDocument,
+} from "@/app/lib/mikeApi";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 export interface ChatInputHandle {
     addDoc: (doc: Document) => void;
@@ -45,6 +51,7 @@ interface Props {
     onProjectsClick?: () => void;
     projectName?: string;
     projectCmNumber?: string | null;
+    projectId?: string;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
@@ -57,6 +64,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         onProjectsClick,
         projectName,
         projectCmNumber,
+        projectId,
     }: Props,
     ref,
 ) {
@@ -76,6 +84,38 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
     const [apiKeyModalProvider, setApiKeyModalProvider] =
         useState<ModelProvider | null>(null);
+    const [uploading, setUploading] = useState(false);
+
+    const processFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length) return;
+            setUploading(true);
+            try {
+                const uploaded = await Promise.all(
+                    files.map((f) =>
+                        projectId
+                            ? uploadProjectDocument(projectId, f)
+                            : uploadStandaloneDocument(f),
+                    ),
+                );
+                uploaded.forEach((doc) => {
+                    setAttachedDocs((prev) => {
+                        if (prev.some((d) => d.id === doc.id)) return prev;
+                        return [...prev, doc];
+                    });
+                });
+            } catch (err) {
+                console.error("Upload failed:", err);
+            } finally {
+                setUploading(false);
+            }
+        },
+        [projectId],
+    );
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+    });
 
     useImperativeHandle(ref, () => ({
         addDoc: (doc: Document) => {
@@ -162,8 +202,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
 
     return (
         <>
-            <div className="w-full">
-                <div className="rounded-[18px] border border-white/65 bg-white/60 shadow-[0_4px_10px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-6px_14px_rgba(255,255,255,0.18)] backdrop-blur-2xl md:rounded-[22px]">
+            <div className="relative w-full" {...dropHandlers}>
+                <DropZoneOverlay isDragOver={isDragOver} />
+            <div className="rounded-[18px] border border-white/65 bg-white/60 shadow-[0_4px_10px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-6px_14px_rgba(255,255,255,0.18)] backdrop-blur-2xl md:rounded-[22px]">
                     {/* Attached chips */}
                     {(selectedWorkflow || attachedDocs.length > 0) && (
                         <div className="flex flex-wrap gap-1.5 px-2 pt-2">

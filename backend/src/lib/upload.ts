@@ -44,9 +44,12 @@ const memoryUpload = multer({
   fileFilter,
 });
 
-export function singleFileUpload(fieldName: string): RequestHandler {
+function wrapSingleUpload(
+  uploadInstance: ReturnType<typeof multer>,
+  fieldName: string,
+): RequestHandler {
   return (req, res, next) => {
-    memoryUpload.single(fieldName)(req, res, (err) => {
+    uploadInstance.single(fieldName)(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
           if (err.code === "LIMIT_FILE_SIZE") {
@@ -84,4 +87,54 @@ export function singleFileUpload(fieldName: string): RequestHandler {
       return next();
     });
   };
+}
+
+export function singleFileUpload(fieldName: string): RequestHandler {
+  return wrapSingleUpload(memoryUpload, fieldName);
+}
+
+// ---------------------------------------------------------------------------
+// Prompt-file upload — accepts Markdown, plain-text, Word, and PDF files.
+// Used by the /workflows/extract-text route which needs a broader set of
+// accepted types than the document-only singleFileUpload above.
+// ---------------------------------------------------------------------------
+
+const PROMPT_FILE_EXTENSIONS = new Set([
+  "md",
+  "markdown",
+  "txt",
+  "docx",
+  "doc",
+  "pdf",
+]);
+
+function promptFileFilter(
+  _req: Express.Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback,
+) {
+  const ext = file.originalname.split(".").pop()?.toLowerCase();
+  if (ext && PROMPT_FILE_EXTENSIONS.has(ext)) {
+    cb(null, true);
+  } else {
+    cb(
+      new multer.MulterError(
+        "LIMIT_UNEXPECTED_FILE",
+        `Unsupported file type: .${ext ?? "unknown"}. Only Markdown, text, Word, and PDF files are allowed.`,
+      ),
+    );
+  }
+}
+
+const promptMemoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_UPLOAD_SIZE_BYTES,
+    files: 1,
+  },
+  fileFilter: promptFileFilter,
+});
+
+export function promptFileUpload(fieldName: string): RequestHandler {
+  return wrapSingleUpload(promptMemoryUpload, fieldName);
 }

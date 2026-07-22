@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Upload, Loader2, X } from "lucide-react";
 import {
     uploadStandaloneDocument,
@@ -19,6 +19,8 @@ import {
     formatUnsupportedDocumentWarning,
     partitionSupportedDocumentFiles,
 } from "@/app/lib/documentUploadValidation";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 export { invalidateDirectoryCache };
 
@@ -46,6 +48,47 @@ export function AddDocumentsModal({
     const [uploadWarning, setUploadWarning] = useState<string | null>(null);
     const [extraUploadedDocs, setExtraUploadedDocs] = useState<Document[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const processFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length) return;
+            const { supported, unsupported } =
+                partitionSupportedDocumentFiles(files);
+            setUploadWarning(formatUnsupportedDocumentWarning(unsupported));
+            if (supported.length === 0) {
+                if (fileInputRef.current) fileInputRef.current.value = "";
+                return;
+            }
+            setUploadingFilenames(supported.map((file) => file.name));
+            setUploading(true);
+            try {
+                const uploaded = await Promise.all(
+                    supported.map((f) =>
+                        projectId
+                            ? uploadProjectDocument(projectId, f)
+                            : uploadStandaloneDocument(f),
+                    ),
+                );
+                invalidateDirectoryCache();
+                refetch();
+                setExtraUploadedDocs((prev) => [...uploaded, ...prev]);
+                uploaded.forEach((d) =>
+                    setSelectedIds((prev) => new Set([...prev, d.id])),
+                );
+            } catch (err) {
+                console.error("Upload failed:", err);
+            } finally {
+                setUploading(false);
+                setUploadingFilenames([]);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+            }
+        },
+        [projectId, refetch],
+    );
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+    });
 
     useEffect(() => {
         if (!open) return;
@@ -116,37 +159,7 @@ export function AddDocumentsModal({
 
     async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const files = Array.from(e.target.files || []);
-        if (!files.length) return;
-        const { supported, unsupported } =
-            partitionSupportedDocumentFiles(files);
-        setUploadWarning(formatUnsupportedDocumentWarning(unsupported));
-        if (supported.length === 0) {
-            if (fileInputRef.current) fileInputRef.current.value = "";
-            return;
-        }
-        setUploadingFilenames(supported.map((file) => file.name));
-        setUploading(true);
-        try {
-            const uploaded = await Promise.all(
-                supported.map((f) =>
-                    projectId
-                        ? uploadProjectDocument(projectId, f)
-                        : uploadStandaloneDocument(f),
-                ),
-            );
-            invalidateDirectoryCache();
-            refetch();
-            setExtraUploadedDocs((prev) => [...uploaded, ...prev]);
-            uploaded.forEach((d) =>
-                setSelectedIds((prev) => new Set([...prev, d.id])),
-            );
-        } catch (err) {
-            console.error("Upload failed:", err);
-        } finally {
-            setUploading(false);
-            setUploadingFilenames([]);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
+        processFiles(files);
     }
 
     return (
@@ -201,7 +214,11 @@ export function AddDocumentsModal({
                 </div>
             )}
 
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div
+                className="relative flex min-h-0 flex-1 flex-col"
+                {...dropHandlers}
+            >
+                <DropZoneOverlay isDragOver={isDragOver} />
                 <FileDirectory
                     standaloneDocs={allStandalone}
                     directoryProjects={availableProjects}

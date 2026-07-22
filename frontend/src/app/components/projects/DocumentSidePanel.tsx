@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     AlertCircle,
@@ -18,6 +18,8 @@ import { SpreadsheetView } from "@/app/components/shared/views/SpreadsheetView";
 import { WarningPopup } from "@/app/components/popups/WarningPopup";
 import type { Document } from "@/app/components/shared/types";
 import { isSpreadsheetFilename } from "@/app/components/shared/types";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 import type { DocumentVersion } from "@/app/lib/mikeApi";
 import { cn } from "@/app/lib/utils";
 import { formatBytes } from "./ProjectPageParts";
@@ -130,6 +132,29 @@ export function DocumentSidePanel({
     const dragStartPanelWidth = useRef(
         DEFAULT_DOC_COLUMN_WIDTH + RESIZER_WIDTH + DEFAULT_DATA_COLUMN_WIDTH,
     );
+
+    const processFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length || !doc) return;
+            const file = files[0];
+            setUploadError(null);
+            setUploading(true);
+            try {
+                await onUploadNewVersion(doc, file, file.name);
+            } catch (err) {
+                console.error("upload new version failed", err);
+                setUploadError("Could not upload the new version.");
+            } finally {
+                setUploading(false);
+            }
+        },
+        [doc, onUploadNewVersion],
+    );
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+        single: true,
+    });
 
     useEffect(() => setMounted(true), []);
 
@@ -404,11 +429,13 @@ export function DocumentSidePanel({
         <div
             ref={panelRef}
             className={cn(
-                "fixed z-[190] flex flex-col",
+                "relative fixed z-[190] flex flex-col",
                 "inset-3 md:left-auto rounded-2xl border border-white/70 bg-gray-50/80 shadow-[0_8px_24px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-10px_24px_rgba(255,255,255,0.18),inset_1px_0_0_rgba(255,255,255,0.5)] backdrop-blur-2xl overflow-hidden",
             )}
             style={isMobile ? undefined : { width: panelWidth }}
+            {...dropHandlers}
         >
+            <DropZoneOverlay isDragOver={isDragOver} />
             <div
                 onMouseDown={handlePanelResizeMouseDown}
                 className="absolute inset-y-0 left-0 z-20 hidden w-1 cursor-col-resize bg-transparent transition-colors hover:bg-blue-400/60 md:block"

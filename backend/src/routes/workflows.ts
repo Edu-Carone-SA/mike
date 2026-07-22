@@ -7,6 +7,10 @@ import {
   type SystemWorkflow,
 } from "../lib/systemWorkflows";
 import { findMissingUserEmails } from "../lib/userLookup";
+import { promptFileUpload } from "../lib/upload";
+import { extractDocxWithComments } from "../lib/docxComments";
+import { extractPdfText } from "../lib/chat/tools/documentOps";
+import { docxToPdf } from "../lib/convert";
 
 export const workflowsRouter = Router();
 
@@ -527,6 +531,83 @@ workflowsRouter.delete("/hidden/:workflowId", requireAuth, asyncRoute(async (req
   if (error) return void res.status(500).json({ detail: error.message });
   res.status(204).send();
 }));
+
+// POST /workflows/extract-text
+// Accepts a file upload (.md, .markdown, .txt, .docx, .doc, .pdf) and returns
+// the extracted plain text. For .docx files, comments are appended in a
+// formatted section. Protected by requireAuth.
+workflowsRouter.post(
+  "/extract-text",
+  requireAuth,
+  promptFileUpload("file"),
+  asyncRoute(async (req, res) => {
+    const file = req.file;
+    if (!file) {
+      return void res.status(400).json({ detail: "No file uploaded" });
+    }
+
+    const filename = file.originalname;
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    const buffer = file.buffer;
+
+    let text: string;
+    let commentCount = 0;
+
+    try {
+      if (ext === "md" || ext === "markdown" || ext === "txt") {
+        text = buffer.toString("utf8");
+      } else if (ext === "docx") {
+        const result = await extractDocxWithComments(buffer);
+        text = result.text;
+        commentCount = result.commentCount;
+      } else if (ext === "doc") {
+        // Legacy .doc: convert to PDF via LibreOffice then extract text,
+        // matching the documentOps pipeline. Fall back to mammoth if the
+        // conversion is unavailable (e.g. LibreOffice not installed).
+        try {
+          const pdfBuf = await docxToPdf(buffer);
+          const pdfArrayBuffer = pdfBuf.buffer.slice(
+            pdfBuf.byteOffset,
+            pdfBuf.byteOffset + pdfBuf.byteLength,
+          ) as ArrayBuffer;
+          text = await extractPdfText(pdfArrayBuffer);
+        } catch (docErr) {
+          devLog(
+            "[workflows/extract-text] docxToPdf failed for .doc, falling back to mammoth",
+            docErr,
+          );
+          const mammoth = await import("mammoth");
+          const mammothResult = await mammoth.extractRawText({ buffer });
+          text = mammothResult.value;
+        }
+      } else if (ext === "pdf") {
+        const arrayBuffer = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        ) as ArrayBuffer;
+        text = await extractPdfText(arrayBuffer);
+      } else {
+        return void res
+          .status(415)
+          .json({ detail: `Unsupported file type: .${ext}` });
+      }
+
+      devLog("[workflows/extract-text]", {
+        filename,
+        ext,
+        textLength: text.length,
+        commentCount,
+      });
+
+      return void res.json({ text, filename, commentCount });
+    } catch (err) {
+      console.error("[workflows/extract-text] error", err);
+      return void res
+        .status(500)
+        .json({ detail: "Failed to extract text from file" });
+    }
+  }),
+);
 
 // POST /workflows/:workflowId/open-source
 workflowsRouter.post("/:workflowId/open-source", requireAuth, asyncRoute(async (req, res) => {

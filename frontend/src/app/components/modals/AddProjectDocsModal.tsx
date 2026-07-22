@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, Upload, X } from "lucide-react";
 import { SearchBar } from "@/app/components/ui/search-bar";
 import { getProject, uploadProjectDocument } from "@/app/lib/mikeApi";
@@ -8,6 +8,8 @@ import type { Document } from "../shared/types";
 import { DocFileIcon } from "../shared/FileDirectory";
 import { VersionChip } from "../shared/VersionChip";
 import { Modal } from "./Modal";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 interface Props {
     open: boolean;
@@ -44,6 +46,34 @@ export function AddProjectDocsModal({
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const processFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length) return;
+            setUploading(true);
+            try {
+                const uploaded = await Promise.all(
+                    files.map((f) => uploadProjectDocument(projectId, f)),
+                );
+                setDocs((prev) => [...uploaded, ...prev]);
+                setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    uploaded.forEach((d) => next.add(d.id));
+                    return next;
+                });
+            } catch (err) {
+                console.error("Upload failed:", err);
+            } finally {
+                setUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+            }
+        },
+        [projectId],
+    );
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+    });
 
     useEffect(() => {
         if (!open) return;
@@ -96,24 +126,7 @@ export function AddProjectDocsModal({
 
     async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const files = Array.from(e.target.files || []);
-        if (!files.length) return;
-        setUploading(true);
-        try {
-            const uploaded = await Promise.all(
-                files.map((f) => uploadProjectDocument(projectId, f)),
-            );
-            setDocs((prev) => [...uploaded, ...prev]);
-            setSelectedIds((prev) => {
-                const next = new Set(prev);
-                uploaded.forEach((d) => next.add(d.id));
-                return next;
-            });
-        } catch (err) {
-            console.error("Upload failed:", err);
-        } finally {
-            setUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
+        processFiles(files);
     }
 
     return (
@@ -152,7 +165,12 @@ export function AddProjectDocsModal({
                 className="hidden"
                 onChange={handleUpload}
             />
-            <div className="pt-1 pb-2">
+            <div
+                className="relative flex min-h-0 flex-1 flex-col"
+                {...dropHandlers}
+            >
+                <DropZoneOverlay isDragOver={isDragOver} />
+                <div className="pt-1 pb-2">
                 <SearchBar
                     value={search}
                     onValueChange={setSearch}
@@ -244,6 +262,7 @@ export function AddProjectDocsModal({
                     })}
                 </div>
             )}
+            </div>
             </div>
         </Modal>
     );

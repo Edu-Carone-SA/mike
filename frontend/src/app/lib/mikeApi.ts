@@ -1305,6 +1305,25 @@ export async function createWorkflow(payload: {
     });
 }
 
+export async function extractWorkflowText(
+    file: File,
+): Promise<{ text: string; filename: string; commentCount: number }> {
+    const authHeaders = await getAuthHeader();
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${API_BASE}/workflows/extract-text`, {
+        method: "POST",
+        headers: { ...authHeaders },
+        body: form,
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json() as Promise<{
+        text: string;
+        filename: string;
+        commentCount: number;
+    }>;
+}
+
 export async function updateWorkflow(
     workflowId: string,
     payload: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Upload, User, X } from "lucide-react";
 import {
     addDocumentToProject,
@@ -17,6 +17,8 @@ import { Modal } from "../modals/Modal";
 import { ModalFieldLabel } from "../modals/ModalFieldLabel";
 import { ModalTextInput } from "../modals/ModalTextInput";
 import { ProjectPracticeField } from "./ProjectPracticeField";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 interface Props {
     open: boolean;
@@ -41,6 +43,15 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
 
     const { loading: dirLoading, standaloneDocuments, projects: dirProjects } = useDirectoryData(open);
 
+    const processFiles = useCallback((files: File[]) => {
+        if (!files.length) return;
+        setPendingFiles((prev) => [...prev, ...files.filter((f) => !prev.some((p) => p.name === f.name))]);
+    }, []);
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+    });
+
     if (!open) return null;
 
     function submitterValue(e: React.FormEvent<HTMLFormElement>) {
@@ -54,8 +65,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
     function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
         const files = Array.from(e.target.files ?? []);
         e.target.value = "";
-        if (!files.length) return;
-        setPendingFiles((prev) => [...prev, ...files.filter((f) => !prev.some((p) => p.name === f.name))]);
+        processFiles(files);
     }
 
     async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -309,7 +319,11 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
                         </div>
                     </div>
                 ) : (
-                    <div className="flex min-h-0 flex-1 flex-col">
+                    <div
+                        className="relative flex min-h-0 flex-1 flex-col"
+                        {...dropHandlers}
+                    >
+                        <DropZoneOverlay isDragOver={isDragOver} />
                         <FileDirectory
                             standaloneDocs={standaloneDocuments}
                             directoryProjects={dirProjects}
