@@ -128,8 +128,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                 creditsResetDate: futureResetDate.toISOString(),
                 creditsRemaining: 999999, // temporarily unlimited
                 tier: "Free",
-                titleModel: "deepseek-v4-flash",
-                tabularModel: "deepseek-v4-flash",
+                titleModel: "deepseek/deepseek-chat",
+                tabularModel: "deepseek/deepseek-chat",
                 mfaOnLogin: false,
                 legalResearchUs: true,
                 role: "member",

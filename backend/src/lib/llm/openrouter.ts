@@ -8,7 +8,7 @@ import type {
 } from "./types";
 import { createRawLlmStreamRecorder, logRawLlmStream } from "./rawStreamLog";
 
-const DEEPSEEK_CHAT_URL = "https://api.deepseek.com/v1/chat/completions";
+const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_OUTPUT_TOKENS = 65536;
 
 type ChatToolCall = {
@@ -64,10 +64,10 @@ type ChatCompletionResponse = {
 };
 
 function apiKey(override?: string | null): string {
-  const key = override?.trim() || process.env.DEEPSEEK_API_KEY?.trim() || "";
+  const key = override?.trim() || process.env.OPENROUTER_API_KEY?.trim() || "";
   if (!key) {
     throw new Error(
-      "DeepSeek API key is not configured. Set DEEPSEEK_API_KEY or add a user DeepSeek key.",
+      "OpenRouter API key is not configured. Set OPENROUTER_API_KEY or add a user OpenRouter key.",
     );
   }
   return key;
@@ -133,9 +133,9 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 /**
- * Merge incremental tool_call deltas. DeepSeek streams tool calls in fragments:
- * the first chunk has { id, function: { name } }, subsequent chunks append to
- * function.arguments. We accumulate per-index.
+ * Merge incremental tool_call deltas. OpenRouter streams tool calls in
+ * fragments: the first chunk has { id, function: { name } }, subsequent
+ * chunks append to function.arguments. We accumulate per-index.
  */
 function accumulateToolCallDeltas(
   accumulators: Map<number, { id: string; name: string; args: string }>,
@@ -199,15 +199,16 @@ async function createChatCompletion(params: {
   }
 
   if (params.enableThinking) {
-    body.thinking = { type: "enabled" };
-    body.reasoning_effort = "medium";
+    body.reasoning = { effort: "medium" };
   }
 
-  const response = await fetch(DEEPSEEK_CHAT_URL, {
+  const response = await fetch(OPENROUTER_CHAT_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${params.apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://mike.agov.app",
+      "X-Title": "Mike Atlas",
     },
     body: JSON.stringify(body),
     signal: params.signal,
@@ -216,7 +217,7 @@ async function createChatCompletion(params: {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     const err = new Error(
-      `DeepSeek request failed (${response.status}): ${text || response.statusText}`,
+      `OpenRouter request failed (${response.status}): ${text || response.statusText}`,
     );
     (err as { status?: number }).status = response.status;
     throw err;
@@ -225,7 +226,7 @@ async function createChatCompletion(params: {
   return response;
 }
 
-export async function streamDeepSeek(
+export async function streamOpenRouter(
   params: StreamChatParams,
 ): Promise<StreamChatResult> {
   const {
@@ -238,11 +239,11 @@ export async function streamDeepSeek(
     enableThinking,
   } = params;
   const maxIter = params.maxIterations ?? 10;
-  const key = apiKey(apiKeys?.deepseek);
+  const key = apiKey(apiKeys?.openrouter);
   const chatTools = toChatTools(tools);
   let fullText = "";
   const rawStreamRecorder = createRawLlmStreamRecorder({
-    provider: "deepseek",
+    provider: "openrouter",
     model,
   });
 
@@ -260,7 +261,7 @@ export async function streamDeepSeek(
         signal: params.abortSignal,
         enableThinking: !!enableThinking,
       });
-      if (!response.body) throw new Error("DeepSeek response had no body");
+      if (!response.body) throw new Error("OpenRouter response had no body");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -279,7 +280,7 @@ export async function streamDeepSeek(
 
         const decoded = decoder.decode(value, { stream: true });
         logRawLlmStream({
-          provider: "deepseek",
+          provider: "openrouter",
           model,
           iteration: iter,
           label: "sse_chunk",
@@ -296,7 +297,7 @@ export async function streamDeepSeek(
 
         for (const event of extracted.events as ChatStreamEvent[]) {
           logRawLlmStream({
-            provider: "deepseek",
+            provider: "openrouter",
             model,
             iteration: iter,
             label: "sse_event",
@@ -359,6 +360,9 @@ export async function streamDeepSeek(
             { role: "assistant" as const, content: fullText },
             { role: "user" as const, content: "Continue from where you left off. Do not repeat any text you already wrote — just complete the remaining content." },
           ];
+          // Reset for next iteration — don't duplicate the text we
+          // already streamed. We keep fullText as-is since new deltas
+          // will append to it.
           continue;
         }
         break;
@@ -401,12 +405,12 @@ export async function streamDeepSeek(
   }
 }
 
-export async function completeDeepSeekText(params: {
+export async function completeOpenRouterText(params: {
   model: string;
   systemPrompt?: string;
   user: string;
   maxTokens?: number;
-  apiKeys?: { deepseek?: string | null };
+  apiKeys?: { openrouter?: string | null };
 }): Promise<string> {
   const messages: ChatMessage[] = [];
   if (params.systemPrompt) {
@@ -418,7 +422,7 @@ export async function completeDeepSeekText(params: {
     model: params.model,
     messages,
     maxTokens: params.maxTokens ?? 512,
-    apiKey: apiKey(params.apiKeys?.deepseek),
+    apiKey: apiKey(params.apiKeys?.openrouter),
   });
 
   const json = (await response.json()) as ChatCompletionResponse;
