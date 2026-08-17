@@ -16,23 +16,26 @@ import type { ApiKeyState } from "@/app/lib/mikeApi";
 export interface ModelOption {
     id: string;
     label: string;
-    group: "Anthropic" | "Google" | "OpenAI" | "DeepSeek";
+    group: "Anthropic" | "Google" | "OpenAI" | "DeepSeek" | "OpenRouter";
 }
 
 export const MODELS: ModelOption[] = [
-    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", group: "DeepSeek" },
+    { id: "deepseek/deepseek-chat", label: "DeepSeek V4 Flash", group: "OpenRouter" },
 ];
 
-export const SETTINGS_MODELS: ModelOption[] = [
-    ...MODELS,
-    { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", group: "DeepSeek" },
-];
+export const SETTINGS_MODELS: ModelOption[] = [...MODELS];
 
-export const DEFAULT_MODEL_ID = "deepseek-v4-pro";
+export const DEFAULT_MODEL_ID = "deepseek/deepseek-chat";
 
 export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 
-const GROUP_ORDER: ModelOption["group"][] = ["Anthropic", "Google", "OpenAI", "DeepSeek"];
+const GROUP_ORDER: ModelOption["group"][] = [
+    "Anthropic",
+    "Google",
+    "OpenAI",
+    "DeepSeek",
+    "OpenRouter",
+];
 
 interface Props {
     value: string;
@@ -63,7 +66,9 @@ export function ModelToggle({ value, onChange, apiKeys }: Props) {
                     {!selectedAvailable && (
                         <AlertCircle className="h-3 w-3 shrink-0 text-red-500" />
                     )}
-                    <span className="max-w-[140px] truncate">{selectedLabel}</span>
+                    <span className="max-w-[140px] truncate">
+                        {selectedLabel}
+                    </span>
                     <ChevronDown
                         className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
                     />

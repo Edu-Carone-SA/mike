@@ -904,6 +904,34 @@ export async function deleteChat(chatId: string): Promise<void> {
     await apiRequest(`/chat/${chatId}`, { method: "DELETE" });
 }
 
+export type SearchResult = {
+    chats: {
+        id: string;
+        title: string | null;
+        project_id: string | null;
+        created_at: string;
+        updated_at: string;
+    }[];
+    projects: {
+        id: string;
+        name: string;
+        created_at: string;
+        updated_at: string;
+    }[];
+    documents: {
+        id: string;
+        filename: string;
+        project_id: string | null;
+        created_at: string;
+        updated_at: string;
+    }[];
+};
+
+export async function globalSearch(query: string): Promise<SearchResult> {
+    const params = new URLSearchParams({ q: query });
+    return apiRequest<SearchResult>(`/search?${params.toString()}`);
+}
+
 export async function generateChatTitle(
     chatId: string,
     message: string,

@@ -340,7 +340,7 @@ export async function runLLMStream(params: {
       tools: activeTools as OpenAIToolSchema[],
       maxIterations: 10,
       apiKeys,
-      enableThinking: true,
+      enableThinking: false,
       abortSignal: signal,
       callbacks: {
         onContentDelta: (delta) => {
