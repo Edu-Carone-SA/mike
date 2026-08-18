@@ -29,7 +29,7 @@ export const DEFAULT_MODEL_ID = "deepseek/deepseek-chat";
 
 export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 
-const GROUP_ORDER: ModelOption["group"][] = [
+export const GROUP_ORDER: ModelOption["group"][] = [
     "Anthropic",
     "Google",
     "OpenAI",
