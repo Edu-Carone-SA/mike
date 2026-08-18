@@ -33,7 +33,13 @@ interface UserProfile {
     legalResearchUs: boolean;
     role: string;
     status: string;
-    apiKeys: ApiKeyState;
+    /**
+     * Omitted when the profile fails to load (fallback). Components that
+     * check `apiKeys &&` will skip the API-key gate, letting the backend
+     * validate instead of blocking the user with a false "missing API key"
+     * error.
+     */
+    apiKeys?: ApiKeyState;
     keySuffixes: Record<string, string | null>;
     editable: Record<string, boolean>;
 }
@@ -120,7 +126,13 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
             const futureResetDate = new Date();
             futureResetDate.setDate(futureResetDate.getDate() + 30);
 
-            // Set fallback profile data on exception
+            // Set fallback profile data on exception.
+            // IMPORTANT: apiKeys is intentionally omitted. When the profile
+            // fails to load (e.g. 401, timeout), we don't know which API keys
+            // are configured. Setting them all to false would block the user
+            // from using models that ARE configured via env vars (e.g.
+            // DEEPSEEK_API_KEY). Instead, omit apiKeys so components skip the
+            // API-key gate and let the backend validate.
             setProfile({
                 displayName: null,
                 organisation: null,
@@ -134,7 +146,6 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                 legalResearchUs: true,
                 role: "member",
                 status: "active",
-                apiKeys: emptyApiKeys(),
                 keySuffixes: {},
                 editable: {},
             });
@@ -259,7 +270,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
                         ? {
                               ...prev,
                               apiKeys: {
-                                  ...prev.apiKeys,
+                                  ...(prev.apiKeys ?? emptyApiKeys()),
                                   [provider]: {
                                       configured: !!normalized,
                                       source: normalized ? "user" : null,

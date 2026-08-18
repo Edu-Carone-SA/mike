@@ -94,6 +94,7 @@ function CellMarkdown({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-700 underline"
+                        onClick={(e) => e.stopPropagation()}
                         {...props}
                     >
                         {children}
@@ -111,6 +112,7 @@ function CellMarkdown({
                                     title={`Page ${citation.page}: "${citation.quote}"`}
                                     onClick={(e) => {
                                         e.stopPropagation();
+                                        e.preventDefault();
                                         if (onCitationClick) {
                                             onCitationClick(
                                                 citation.page,

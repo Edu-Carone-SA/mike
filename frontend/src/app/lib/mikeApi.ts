@@ -979,6 +979,7 @@ export async function streamChat(payload: {
     chat_id?: string;
     project_id?: string;
     model?: string;
+    attached_documents?: { filename: string; document_id: string }[];
     ask_inputs_response?: {
         responses: (
             | {
@@ -1330,6 +1331,25 @@ export async function createWorkflow(payload: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
+}
+
+export async function extractWorkflowText(
+    file: File,
+): Promise<{ text: string; filename: string; commentCount: number }> {
+    const authHeaders = await getAuthHeader();
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${API_BASE}/workflows/extract-text`, {
+        method: "POST",
+        headers: { ...authHeaders },
+        body: form,
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json() as Promise<{
+        text: string;
+        filename: string;
+        commentCount: number;
+    }>;
 }
 
 export async function updateWorkflow(

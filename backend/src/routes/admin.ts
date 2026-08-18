@@ -90,7 +90,36 @@ adminRouter.get("/users", async (_req, res) => {
     (profiles ?? []).map((p: { user_id: string }) => [p.user_id, p]),
   );
 
-  const users = (authData.users ?? []).map((u) => {
+  // Auto-create profiles for Auth users that don't have one yet.
+  // This heals desync caused by user re-creation (Supabase Auth issues a
+  // new UUID, leaving the old profile row orphaned). Without this, the
+  // user appears in the list but admin actions fail with "User not found".
+  const authUsers = authData.users ?? [];
+  const missingProfileUsers = authUsers.filter(
+    (u) => !profileMap.has(u.id),
+  );
+  if (missingProfileUsers.length > 0) {
+    await admin.from("user_profiles").upsert(
+      missingProfileUsers.map((u) => ({
+        user_id: u.id,
+        email: (u.email ?? "").toLowerCase(),
+        role: "member",
+        status: "active",
+      })),
+      { onConflict: "user_id" },
+    );
+    // Re-fetch to include the newly created profiles.
+    const { data: refreshed } = await admin
+      .from("user_profiles")
+      .select(
+        "user_id, email, role, status, created_at, updated_at, last_login_at, disabled_at",
+      );
+    for (const p of refreshed ?? []) {
+      profileMap.set(p.user_id, p);
+    }
+  }
+
+  const users = authUsers.map((u) => {
     const profile = profileMap.get(u.id) as Record<string, unknown> | undefined;
     return {
       id: u.id,
@@ -141,6 +170,15 @@ adminRouter.post("/users", async (req, res) => {
   if (!newUser.user) {
     return res.status(500).json({ detail: "Failed to create user" });
   }
+
+  // Reclaim any orphaned profile from a previously deleted user with the
+  // same email. Supabase Auth generates a new UUID on re-creation, so the
+  // old profile row becomes stale and would cause "User not found" on
+  // subsequent admin actions (reset-password, role change, etc.).
+  await admin
+    .from("user_profiles")
+    .update({ user_id: newUser.user.id })
+    .eq("email", email.toLowerCase());
 
   const { error: profileError } = await admin
     .from("user_profiles")
@@ -414,8 +452,16 @@ adminRouter.post("/users/:userId/reset-password", async (req, res) => {
     .eq("user_id", userId)
     .maybeSingle();
 
+  // Fall back to Auth if the profile is missing (e.g., user was deleted and
+  // recreated — the profile row still has the old UUID). The password reset
+  // operates on the Auth UUID, not the profile, so we can proceed safely.
+  let userEmail = currentProfile?.email ?? null;
   if (!currentProfile) {
-    return res.status(404).json({ detail: "User not found" });
+    const { data: authUser } = await admin.auth.admin.getUserById(userId);
+    if (!authUser?.user) {
+      return res.status(404).json({ detail: "User not found" });
+    }
+    userEmail = authUser.user.email ?? null;
   }
 
   const { error } = await admin.auth.admin.updateUserById(userId, {
@@ -439,12 +485,12 @@ adminRouter.post("/users/:userId/reset-password", async (req, res) => {
     actorEmail,
     "admin_user_password_reset",
     userId,
-    currentProfile.email,
+    userEmail,
   );
 
   // Return temp password one-time only
   return res.json({
-    user: { id: userId, email: currentProfile.email },
+    user: { id: userId, email: userEmail },
     temporaryPassword: tempPassword,
   });
 });

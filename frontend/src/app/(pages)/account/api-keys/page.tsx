@@ -54,10 +54,10 @@ export default function ApiKeysPage() {
                             label={field.label}
                             placeholder={field.placeholder}
                             hasSavedKey={
-                                !!profile?.apiKeys[field.provider].configured
+                                !!profile?.apiKeys?.[field.provider]?.configured
                             }
                             isServerConfigured={
-                                profile?.apiKeys[field.provider].source ===
+                                profile?.apiKeys?.[field.provider]?.source ===
                                 "env"
                             }
                             keySuffix={profile?.keySuffixes?.[field.provider]}
@@ -85,10 +85,10 @@ export default function ApiKeysPage() {
                         description={field.description}
                         placeholder={field.placeholder}
                         hasSavedKey={
-                            !!profile?.apiKeys[field.provider].configured
+                            !!profile?.apiKeys?.[field.provider]?.configured
                         }
                         isServerConfigured={
-                            profile?.apiKeys[field.provider].source === "env"
+                            profile?.apiKeys?.[field.provider]?.source === "env"
                         }
                         keySuffix={profile?.keySuffixes?.[field.provider]}
                         provider={field.provider}

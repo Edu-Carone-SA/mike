@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Upload } from "lucide-react";
 import type { Document, Project, Workflow } from "../shared/types";
 import {
@@ -16,6 +16,8 @@ import { Modal } from "../modals/Modal";
 import { ModalFieldLabel } from "../modals/ModalFieldLabel";
 import { ModalSelect } from "../modals/ModalSelect";
 import { ModalTextInput } from "../modals/ModalTextInput";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 const isDev = process.env.NODE_ENV !== "production";
 const devLog = (...args: Parameters<typeof console.log>) => {
@@ -69,6 +71,40 @@ export function NewTRModal({
     );
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const processFiles = useCallback(
+        async (files: File[]) => {
+            if (!files.length) return;
+            setUploading(true);
+            try {
+                const uploaded = await Promise.all(
+                    files.map((f) =>
+                        underProject && selectedProjectId
+                            ? uploadProjectDocument(selectedProjectId, f)
+                            : uploadStandaloneDocument(f),
+                    ),
+                );
+                if (underProject && selectedProjectId) {
+                    setProjectDocs((prev) => [...uploaded, ...prev]);
+                } else {
+                    setStandaloneDocs((prev) => [...uploaded, ...prev]);
+                }
+                uploaded.forEach((d) =>
+                    setSelectedDocIds((prev) => new Set([...prev, d.id])),
+                );
+            } catch (err) {
+                console.error("Upload failed:", err);
+            } finally {
+                setUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+            }
+        },
+        [underProject, selectedProjectId],
+    );
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: processFiles,
+    });
 
     // Workflow templates
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -200,30 +236,7 @@ export function NewTRModal({
 
     async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const files = Array.from(e.target.files ?? []);
-        if (!files.length) return;
-        setUploading(true);
-        try {
-            const uploaded = await Promise.all(
-                files.map((f) =>
-                    underProject && selectedProjectId
-                        ? uploadProjectDocument(selectedProjectId, f)
-                        : uploadStandaloneDocument(f),
-                ),
-            );
-            if (underProject && selectedProjectId) {
-                setProjectDocs((prev) => [...uploaded, ...prev]);
-            } else {
-                setStandaloneDocs((prev) => [...uploaded, ...prev]);
-            }
-            uploaded.forEach((d) =>
-                setSelectedDocIds((prev) => new Set([...prev, d.id])),
-            );
-        } catch (err) {
-            console.error("Upload failed:", err);
-        } finally {
-            setUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
+        processFiles(files);
     }
 
     const workflowOptions = [
@@ -427,7 +440,11 @@ export function NewTRModal({
                         )}
                     </div>
                 ) : (
-                    <div className="flex min-h-0 flex-1 flex-col">
+                    <div
+                        className="relative flex min-h-0 flex-1 flex-col"
+                        {...dropHandlers}
+                    >
+                        <DropZoneOverlay isDragOver={isDragOver} />
                         {showDirectory && (
                             <FileDirectory
                                 standaloneDocs={

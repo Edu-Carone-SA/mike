@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual do Usuário — Mike</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+  @page {
+    size: A4;
+    margin: 0;
+    @bottom-center {
+      content: counter(page);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 9pt;
+      color: #939cad;
+    }
+  }
+  @page :first {
+    @bottom-center { content: none; }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #44546a;
+    background: #ffffff;
+  }
+
+  /* ========== COVER ========== */
+  .cover {
+    height: 297mm;
+    padding: 0;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #00af8d 0%, #00af8d 40%, #6600f7 100%);
+  }
+  .cover-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #ffffff;
+    z-index: 2;
+    width: 80%;
+  }
+  .cover-logo {
+    font-size: 28pt;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8mm;
+    color: #ffffff;
+  }
+  .cover-logo span { font-weight: 300; }
+  .cover-title {
+    font-size: 36pt;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 6mm;
+    letter-spacing: -1px;
+  }
+  .cover-subtitle {
+    font-size: 14pt;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-bottom: 20mm;
+  }
+  .cover-divider {
+    width: 60mm;
+    height: 3px;
+    background: rgba(255,255,255,0.3);
+    margin: 0 auto 8mm;
+    border-radius: 2px;
+  }
+  .cover-version {
+    font-size: 10pt;
+    opacity: 0.7;
+    font-weight: 400;
+  }
+  /* organic shapes */
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -60mm;
+    right: -40mm;
+    width: 120mm;
+    height: 120mm;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    z-index: 1;
+  }
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -50mm;
+    left: -30mm;
+    width: 100mm;
+    height: 100mm;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    z-index: 1;
+  }
+
+  /* ========== TABLE OF CONTENTS ========== */
+  .toc {
+    padding: 25mm 20mm 20mm;
+    page-break-after: always;
+  }
+  .toc h2 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #0d184c;
+    margin-bottom: 10mm;
+    letter-spacing: -0.3px;
+  }
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    padding: 3mm 0;
+    border-bottom: 0.5px solid #e3e7fa;
+    text-decoration: none;
+    color: #44546a;
+  }
+  .toc-item:hover { color: #00af8d; }
+  .toc-number {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #00af8d;
+    width: 10mm;
+    flex-shrink: 0;
+  }
+  .toc-text {
+    font-size: 11pt;
+    font-weight: 500;
+    color: #0d184c;
+    flex: 1;
+  }
+  .toc-sub {
+    font-size: 9.5pt;
+    color: #939cad;
+    padding-left: 10mm;
+    font-weight: 400;
+  }
+
+  /* ========== SECTIONS ========== */
+  .section {
+    padding: 20mm 22mm 15mm;
+    page-break-before: always;
+  }
+  .section:first-of-type { page-break-before: avoid; }
+
+  .section-header {
+    margin-bottom: 10mm;
+    padding-bottom: 5mm;
+    border-bottom: 2px solid #e3e7fa;
+    position: relative;
+  }
+  .section-header::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 30mm;
+    height: 2px;
+    background: linear-gradient(90deg, #00af8d 0%, #6600f7 100%);
+    border-radius: 1px;
+  }
+  .section-number {
+    display: inline-block;
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #00af8d;
+    margin-bottom: 2mm;
+  }
+  .section-title {
+    font-size: 22pt;
+    font-weight: 800;
+    color: #0d184c;
+    letter-spacing: -0.5px;
+    line-height: 1.2;
+  }
+  .section-subtitle {
+    font-size: 11pt;
+    color: #939cad;
+    margin-top: 2mm;
+    font-weight: 400;
+  }
+
+  h3 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #0d184c;
+    margin-top: 8mm;
+    margin-bottom: 3mm;
+    letter-spacing: -0.2px;
+  }
+  h4 {
+    font-size: 11.5pt;
+    font-weight: 600;
+    color: #44546a;
+    margin-top: 5mm;
+    margin-bottom: 2mm;
+  }
+  p { margin-bottom: 3mm; }
+
+  strong { color: #0d184c; font-weight: 600; }
+
+  a { color: #00af8d; text-decoration: none; }
+
+  ul, ol {
+    margin: 2mm 0 4mm 6mm;
+  }
+  li {
+    margin-bottom: 1.5mm;
+    line-height: 1.55;
+  }
+  ul li::marker { color: #00af8d; }
+
+  /* ========== CALLOUTS ========== */
+  .callout {
+    background: #f0f2ff;
+    border-left: 4px solid #00af8d;
+    border-radius: 0 8px 8px 0;
+    padding: 4mm 5mm;
+    margin: 5mm 0;
+    font-size: 10pt;
+  }
+  .callout-title {
+    font-weight: 700;
+    color: #0d184c;
+    margin-bottom: 1mm;
+    font-size: 10.5pt;
+  }
+  .callout p { margin-bottom: 0; }
+
+  .callout-tip {
+    background: #f0f2ff;
+    border-left-color: #6600f7;
+  }
+  .callout-tip .callout-title { color: #6600f7; }
+
+  .callout-warning {
+    background: #fff8f0;
+    border-left-color: #038ef7;
+  }
+  .callout-warning .callout-title { color: #038ef7; }
+
+  /* ========== CARDS ========== */
+  .card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4mm;
+    margin: 5mm 0;
+  }
+  .card {
+    flex: 1;
+    min-width: 70mm;
+    background: #ffffff;
+    border: 1px solid #e3e7fa;
+    border-radius: 10px;
+    padding: 5mm;
+    box-shadow: 0 1px 3px rgba(143, 163, 216, 0.15);
+  }
+  .card-icon {
+    font-size: 18pt;
+    margin-bottom: 2mm;
+  }
+  .card-title {
+    font-weight: 700;
+    color: #0d184c;
+    font-size: 10.5pt;
+    margin-bottom: 1mm;
+  }
+  .card-text {
+    font-size: 9.5pt;
+    color: #44546a;
+    line-height: 1.5;
+  }
+
+  /* ========== STEP-BY-STEP ========== */
+  .steps {
+    counter-reset: step;
+    margin: 5mm 0;
+    padding-left: 0;
+    list-style: none;
+  }
+  .steps > li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 14mm;
+    padding-bottom: 5mm;
+    border-left: 2px solid #e3e7fa;
+    margin-left: 5mm;
+    padding-left: 9mm;
+  }
+  .steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: -7mm;
+    top: 0;
+    width: 8mm;
+    height: 8mm;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #00af8d 0%, #6600f7 100%);
+    color: #ffffff;
+    font-size: 9pt;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+  }
+  .steps > li:last-child { border-left-color: transparent; }
+  .step-title {
+    font-weight: 600;
+    color: #0d184c;
+    margin-bottom: 1mm;
+    font-size: 11pt;
+  }
+  .step-text {
+    font-size: 10pt;
+    color: #44546a;
+  }
+
+  /* ========== TABLES ========== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 5mm 0;
+    font-size: 10pt;
+  }
+  th {
+    background: #0d184c;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 3mm 4mm;
+    text-align: left;
+    font-size: 9.5pt;
+  }
+  th:first-child { border-radius: 6px 0 0 0; }
+  th:last-child { border-radius: 0 6px 0 0; }
+  td {
+    padding: 3mm 4mm;
+    border-bottom: 0.5px solid #e3e7fa;
+    color: #44546a;
+  }
+  tr:nth-child(even) td { background: #f0f2ff; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ========== BADGES ========== */
+  .badge {
+    display: inline-block;
+    padding: 1mm 3mm;
+    border-radius: 4px;
+    font-size: 8.5pt;
+    font-weight: 600;
+    color: #ffffff;
+  }
+  .badge-green { background: #00af8d; }
+  .badge-purple { background: #6600f7; }
+  .badge-blue { background: #038ef7; }
+  .badge-gray { background: #44546a; }
+
+  /* ========== DIVIDER ========== */
+  .divider {
+    height: 1px;
+    background: #e3e7fa;
+    margin: 8mm 0;
+    border: none;
+  }
+
+  /* ========== HIGHLIGHT BOX ========== */
+  .highlight-box {
+    background: linear-gradient(135deg, #00af8d 0%, #6600f7 100%);
+    border-radius: 12px;
+    padding: 6mm 7mm;
+    color: #ffffff;
+    margin: 6mm 0;
+  }
+  .highlight-box h4 {
+    color: #ffffff;
+    margin-top: 0;
+    font-size: 12pt;
+  }
+  .highlight-box p {
+    color: rgba(255,255,255,0.9);
+    font-size: 10pt;
+    margin-bottom: 0;
+  }
+
+  /* ========== INTRO ========== */
+  .intro {
+    padding: 20mm 22mm;
+  }
+  .intro-lead {
+    font-size: 13pt;
+    color: #0d184c;
+    font-weight: 500;
+    line-height: 1.5;
+    margin-bottom: 6mm;
+  }
+  .intro-grid {
+    display: flex;
+    gap: 5mm;
+    margin: 6mm 0;
+  }
+  .intro-card {
+    flex: 1;
+    background: #f0f2ff;
+    border-radius: 10px;
+    padding: 5mm;
+    text-align: center;
+  }
+  .intro-card-icon {
+    font-size: 22pt;
+    margin-bottom: 2mm;
+  }
+  .intro-card-title {
+    font-weight: 700;
+    color: #0d184c;
+    font-size: 11pt;
+    margin-bottom: 1mm;
+  }
+  .intro-card-text {
+    font-size: 9.5pt;
+    color: #44546a;
+  }
+
+  /* ========== FOOTER ========== */
+  .footer {
+    padding: 10mm 22mm 15mm;
+    page-break-before: always;
+    text-align: center;
+  }
+  .footer-logo {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #0d184c;
+    margin-bottom: 3mm;
+  }
+  .footer-logo span { color: #00af8d; }
+  .footer-tagline {
+    font-size: 11pt;
+    color: #939cad;
+    margin-bottom: 8mm;
+  }
+  .footer-gradient {
+    height: 3px;
+    background: linear-gradient(90deg, #00af8d 0%, #6600f7 100%);
+    width: 60mm;
+    margin: 0 auto 6mm;
+    border-radius: 2px;
+  }
+  .footer-info {
+    font-size: 9pt;
+    color: #bac5d6;
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== COVER ========== -->
+<div class="cover">
+  <div class="cover-content">
+    <div class="cover-logo">atlas<span>gov</span></div>
+    <div class="cover-divider"></div>
+    <div class="cover-title">Manual do Usuário</div>
+    <div class="cover-subtitle">Mike — Assistente Jurídico com IA</div>
+    <div class="cover-version">Versão 1.0 · Julho 2026</div>
+  </div>
+</div>
+
+<!-- ========== TABLE OF CONTENTS ========== -->
+<div class="toc">
+  <h2>Sumário</h2>
+
+  <div class="toc-item">
+    <span class="toc-number">01</span>
+    <span class="toc-text">Introdução ao Mike</span>
+  </div>
+  <div class="toc-sub">O que é · Primeiros passos · Navegação</div>
+
+  <div class="toc-item">
+    <span class="toc-number">02</span>
+    <span class="toc-text">Assistant</span>
+  </div>
+  <div class="toc-sub">Chat com IA · Documentos · Geração de arquivos · Pesquisa jurisprudencial</div>
+
+  <div class="toc-item">
+    <span class="toc-number">03</span>
+    <span class="toc-text">Projects</span>
+  </div>
+  <div class="toc-sub">Organização · Documentos · Compartilhamento</div>
+
+  <div class="toc-item">
+    <span class="toc-number">04</span>
+    <span class="toc-text">Tabular Review</span>
+  </div>
+  <div class="toc-sub">Extração estruturada · Colunas · Geração · Exportação</div>
+
+  <div class="toc-item">
+    <span class="toc-number">05</span>
+    <span class="toc-text">Workflows</span>
+  </div>
+  <div class="toc-sub">Modelos de prompt · Workflows de assistant e tabular · Compartilhamento</div>
+
+  <div class="toc-item">
+    <span class="toc-number">06</span>
+    <span class="toc-text">Conta e Configurações</span>
+  </div>
+  <div class="toc-sub">Perfil · Segurança · Chaves de API · Conectores · Administração</div>
+</div>
+
+<!-- ========== 01 — INTRODUÇÃO ========== -->
+<div class="section intro">
+  <div class="section-header">
+    <div class="section-number">01</div>
+    <div class="section-title">Introdução ao Mike</div>
+    <div class="section-subtitle">Governança simples, acessível e digital</div>
+  </div>
+
+  <p class="intro-lead">
+    O <strong>Mike</strong> é um assistente jurídico com inteligência artificial que
+    ajuda profissionais de governança e direito a analisar documentos, responder questões
+    jurídicas, redigir textos, realizar revisões tabulares e pesquisar jurisprudência —
+    tudo em um só lugar.
+  </p>
+
+  <h3>O que o Mike faz</h3>
+  <div class="intro-grid">
+    <div class="intro-card">
+      <div class="intro-card-icon">💬</div>
+      <div class="intro-card-title">Assistant</div>
+      <div class="intro-card-text">Converse com a IA, anexe documentos, gere arquivos e pesquise jurisprudência.</div>
+    </div>
+    <div class="intro-card">
+      <div class="intro-card-icon">📁</div>
+      <div class="intro-card-title">Projects</div>
+      <div class="intro-card-text">Organize documentos, chats e revisões por projeto. Compartilhe com o time.</div>
+    </div>
+    <div class="intro-card">
+      <div class="intro-card-icon">📊</div>
+      <div class="intro-card-title">Tabular Review</div>
+      <div class="intro-card-text">Extração estruturada de dados de múltiplos documentos em formato de grade.</div>
+    </div>
+    <div class="intro-card">
+      <div class="intro-card-icon">⚙️</div>
+      <div class="intro-card-title">Workflows</div>
+      <div class="intro-card-text">Modelos reutilizáveis de prompt e configurações de colunas para automação.</div>
+    </div>
+  </div>
+
+  <h3>Primeiros passos</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-title">Faça login</div>
+      <div class="step-text">
+        Acesse <strong>https://mike.agov.app</strong> e entre com seu e-mail e senha.
+        Se a autenticação multifator (MFA) estiver ativada, você precisará informar o
+        código de 6 dígitos do seu app autenticador.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Navegue pela barra lateral</div>
+      <div class="step-text">
+        A barra lateral à esquerda dá acesso às quatro principais funcionalidades:
+        <strong>Assistant</strong>, <strong>Projects</strong>, <strong>Tabular Review</strong>
+        e <strong>Workflows</strong>. Também mostra projetos recentes e o histórico de chats.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Configure sua conta</div>
+      <div class="step-text">
+        Clique no seu nome na barra lateral para acessar <strong>Configurações da Conta</strong>,
+        onde você pode ajustar perfil, segurança, chaves de API, conectores e preferências de modelo.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Comece a usar</div>
+      <div class="step-text">
+        A maneira mais rápida de começar é abrir o <strong>Assistant</strong> e fazer uma
+        pergunta. Você pode anexar documentos, aplicar workflows e gerar arquivos — tudo
+        a partir do chat.
+      </div>
+    </li>
+  </ol>
+
+  <div class="callout">
+    <div class="callout-title">📌 Sobre roles de usuário</div>
+    <p>
+      O Mike possui dois perfis: <strong>admin</strong> e <strong>member</strong>.
+      Administradores podem gerenciar usuários, alterar roles, resetar senhas e visualizar
+      logs de auditoria. Membros usam o sistema normalmente. A criação de usuários é
+      feita apenas por administradores — não há auto-registro.
+    </p>
+  </div>
+</div>
+
+<!-- ========== 02 — ASSISTANT ========== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">02</div>
+    <div class="section-title">Assistant</div>
+    <div class="section-subtitle">Chat com IA jurídica · Análise de documentos · Geração de arquivos</div>
+  </div>
+
+  <p>
+    O <strong>Assistant</strong> é o coração do Mike. É uma interface de chat onde você
+    conversa com uma IA jurídica que pode ler documentos anexados, buscar informações
+    dentro deles, gerar arquivos (Word, Excel, PowerPoint), propor edições com controle
+    de alterações e pesquisar jurisprudência americana via CourtListener.
+  </p>
+
+  <h3>Como usar o Assistant</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-title">Abra o Assistant</div>
+      <div class="step-text">
+        Clique em <strong>"Assistant"</strong> na barra lateral. Se não houver chats
+        anteriores, você verá uma tela de boas-vindas com um campo de mensagem.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Escreva sua mensagem</div>
+      <div class="step-text">
+        Digite sua pergunta ou instrução no campo de texto. Você pode ser específico
+        ("Revise a cláusula de confidencialidade do documento anexado") ou abrangente
+        ("Faça um resumo dos riscos principais deste contrato").
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Anexe documentos (opcional)</div>
+      <div class="step-text">
+        Clique no botão <strong>"Add Documents"</strong> para anexar arquivos. Formatos
+        suportados: <span class="badge badge-green">PDF</span>
+        <span class="badge badge-green">DOCX</span>
+        <span class="badge badge-green">DOC</span>
+        <span class="badge badge-green">XLSX</span>
+        <span class="badge badge-green">XLSM</span>
+        <span class="badge badge-green">XLS</span>
+        <span class="badge badge-green">PPTX</span>
+        <span class="badge badge-green">PPT</span>.
+        Documentos Word e PowerPoint são convertidos para PDF automaticamente para visualização.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Aplique um workflow (opcional)</div>
+      <div class="step-text">
+        Clique no botão <strong>"Workflows"</strong> para selecionar um workflow
+        (modelo de prompt) que guiará a resposta da IA. Veja a seção 05 para detalhes.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Envie a mensagem</div>
+      <div class="step-text">
+        Pressione <strong>Enter</strong> ou clique no botão de envio. A resposta da IA
+        aparece em streaming, token por token. O chat é salvo automaticamente no histórico.
+      </div>
+    </li>
+  </ol>
+
+  <h3>Recursos do Assistant</h3>
+
+  <h4>📄 Geração de arquivos</h4>
+  <p>
+    A IA pode gerar documentos completos sob demanda:
+  </p>
+  <ul>
+    <li><strong>Word (.docx):</strong> documentos com seções, tabelas, cabeçalhos e quebras de página.</li>
+    <li><strong>Excel (.xlsx):</strong> planilhas com múltiplas abas.</li>
+    <li><strong>PowerPoint (.pptx):</strong> apresentações com slides estruturados.</li>
+  </ul>
+  <p>
+    Os arquivos gerados ficam disponíveis para download direto no chat.
+  </p>
+
+  <h4>✏️ Edição com controle de alterações</h4>
+  <p>
+    Quando você anexa um documento <strong>.docx</strong>, a IA pode propor edições
+    precisas (substituições de texto). Cada edição aparece como um cartão de
+    <strong>Aceitar / Rejeitar</strong>. Ao aceitar, uma nova versão do documento é
+    criada com a alteração aplicada.
+  </p>
+
+  <div class="callout callout-tip">
+    <div class="callout-title">💡 Dica</div>
+    <p>
+      A IA renumera cláusulas e atualiza referências cruzadas automaticamente ao propor
+      edições. Revise sempre — a IA é precisa, mas o contexto jurídico exige validação humana.
+    </p>
+  </div>
+
+  <h4>📑 Citações</h4>
+  <p>
+    Quando a IA responde com base em um documento anexado, ela inclui citações numeradas
+    <strong>[1]</strong>, <strong>[2]</strong>, etc. Clique em uma citação para abrir a
+    passagem original no painel lateral, com o trecho destacado.
+  </p>
+
+  <h4>⚖️ Pesquisa de jurisprudência (CourtListener)</h4>
+  <p>
+    Se a pesquisa jurisprudencial estiver ativada nas configurações da conta, a IA pode:
+  </p>
+  <ul>
+    <li>Verificar citações de casos jurídicos;</li>
+    <li>Buscar casos por termo ou filtros;</li>
+    <li>Ler o conteúdo de casos específicos;</li>
+    <li>Pesquisar na base de jurisprudência americana.</li>
+  </ul>
+  <p>
+    Os resultados aparecem em um painel dedicado com metadados do caso, opiniões e links
+    para o PDF original.
+  </p>
+
+  <h4>🔄 Chat com escopo de projeto</h4>
+  <p>
+    Você pode iniciar um chat dentro de um projeto específico. Nesse caso, o assistente
+    tem acesso aos documentos do projeto automaticamente. Acesse via
+    <strong>Projects → [projeto] → Assistant → New Chat</strong>.
+  </p>
+
+  <h4>🤖 Modelos de IA</h4>
+  <p>
+    O Mike utiliza modelos da família <strong>DeepSeek</strong>. No seletor de modelo
+    (canto superior do chat), você pode escolher entre:
+  </p>
+  <table>
+    <tr>
+      <th>Modelo</th>
+      <th>Uso</th>
+      <th>Característica</th>
+    </tr>
+    <tr>
+      <td>DeepSeek V4 Pro</td>
+      <td>Chat principal</td>
+      <td>Mais capaz e detalhado</td>
+    </tr>
+    <tr>
+      <td>DeepSeek V4 Flash</td>
+      <td>Títulos, extração tabular</td>
+      <td>Mais rápido e econômico</td>
+    </tr>
+  </table>
+
+  <div class="callout callout-warning">
+    <div class="callout-title">⚠️ Atenção</div>
+    <p>
+      A IA pode usar até 10 rodadas de ferramentas por resposta (leitura de documentos,
+      buscas, geração de arquivos). Se a resposta parecer incompleta, refine a pergunta
+      ou divida em etapas.
+    </p>
+  </div>
+</div>
+
+<!-- ========== 03 — PROJECTS ========== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">03</div>
+    <div class="section-title">Projects</div>
+    <div class="section-subtitle">Organize documentos, chats e revisões por projeto</div>
+  </div>
+
+  <p>
+    <strong>Projects</strong> é o espaço de trabalho para organizar documentos, chats do
+    assistant e revisões tabulares em um mesmo contexto. Ideal para gerenciar um caso,
+    transação ou due diligence. Projetos podem ser compartilhados com outros usuários.
+  </p>
+
+  <h3>Criando um projeto</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-title">Acesse a lista de projetos</div>
+      <div class="step-text">
+        Clique em <strong>"Projects"</strong> na barra lateral. Você verá a lista de
+        projetos com filtros: <em>All</em>, <em>Mine</em>, <em>Shared with me</em>.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Clique em "New project"</div>
+      <div class="step-text">
+        Preencha: <strong>nome do projeto</strong>, <strong>CM number</strong>
+        (número do caso/matéria), <strong>practice</strong> (área de prática) e,
+        opcionalmente, <strong>e-mails</strong> de usuários para compartilhar.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Confirme</div>
+      <div class="step-text">
+        O projeto é criado e você é levado ao <strong>workspace do projeto</strong>.
+      </div>
+    </li>
+  </ol>
+
+  <h3>Workspace do projeto</h3>
+  <p>
+    Dentro de um projeto, você tem três seções em abas:
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <div class="card-title">Documents</div>
+      <div class="card-text">
+        Upload, organização em pastas, versionamento e download de documentos.
+        Arraste e solte ou use o seletor. Cada documento pode ter múltiplas versões.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💬</div>
+      <div class="card-title">Assistant</div>
+      <div class="card-text">
+        Chats do assistant com escopo no projeto. A IA tem acesso automático aos
+        documentos do projeto. Clique em "New Chat" para iniciar.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Tabular Reviews</div>
+      <div class="card-text">
+        Revisões tabulares vinculadas ao projeto. Clique em "New Review" para criar
+        uma extração estruturada a partir dos documentos do projeto.
+      </div>
+    </div>
+  </div>
+
+  <h3>Gerenciando documentos</h3>
+  <p>
+    Na seção <strong>Documents</strong> do projeto, você pode:
+  </p>
+  <ul>
+    <li><strong>Upload:</strong> arraste arquivos ou use o seletor. Formatos: PDF, DOCX, DOC, XLSX, XLSM, XLS, PPTX, PPT.</li>
+    <li><strong>Pastas:</strong> crie pastas e subpastas para organizar documentos.</li>
+    <li><strong>Versionamento:</strong> suba novas versões de um documento, substitua o arquivo, copie versão de outro documento, ou exclua versões antigas.</li>
+    <li><strong>Download:</strong> baixe documentos individuais ou um ZIP de toda a pasta.</li>
+    <li><strong>Mover:</strong> mova documentos entre pastas.</li>
+    <li><strong>Renomear:</strong> altere o nome do documento.</li>
+  </ul>
+
+  <h3>Compartilhamento</h3>
+  <p>
+    O <strong>dono</strong> do projeto pode compartilhá-lo com outros usuários do Mike
+    por e-mail. Usuários compartilhados têm acesso de leitura e escrita, mas apenas o
+    dono pode:
+  </p>
+  <ul>
+    <li>Editar detalhes do projeto;</li>
+    <li>Excluir o projeto;</li>
+    <li>Gerenciar compartilhamento.</li>
+  </ul>
+
+  <div class="callout">
+    <div class="callout-title">📌 Exclusão de projeto</div>
+    <p>
+      A exclusão de um projeto remove permanentemente todos os documentos, versões,
+      arquivos armazenados, chats e revisões tabulares associados. Esta ação não pode
+      ser desfeita.
+    </p>
+  </div>
+</div>
+
+<!-- ========== 04 — TABULAR REVIEW ========== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">04</div>
+    <div class="section-title">Tabular Review</div>
+    <div class="section-subtitle">Extração estruturada de dados de múltiplos documentos</div>
+  </div>
+
+  <p>
+    <strong>Tabular Review</strong> é uma ferramenta de due diligence em grade: cada
+    <strong>linha</strong> é um documento, cada <strong>coluna</strong> é um campo de
+    extração. A IA preenche cada célula analisando o documento correspondente, com
+    citação da fonte. Ideal para extrair informações estruturadas de contratos,
+    acordos e documentos em volume.
+  </p>
+
+  <h3>Criando uma revisão tabular</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-title">Acesse Tabular Review</div>
+      <div class="step-text">
+        Clique em <strong>"Tabular Review"</strong> na barra lateral, ou abra um projeto
+        e vá para a aba <strong>Tabular Reviews</strong>.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Clique em "New Tabular Review"</div>
+      <div class="step-text">
+        Dê um <strong>título</strong>, selecione os <strong>documentos</strong> que
+        farão parte da revisão e, opcionalmente, aplique um <strong>workflow tabular</strong>
+        para preencher as colunas automaticamente.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Configure as colunas</div>
+      <div class="step-text">
+        Defina quais informações você quer extrair de cada documento. Cada coluna tem
+        um nome, um formato e um prompt que orienta a IA.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Gere os dados</div>
+      <div class="step-text">
+        Clique em <strong>"Generate"</strong>. A IA processa cada documento e preenche
+        as células em streaming. Você pode regenerar células individuais depois.
+      </div>
+    </li>
+  </ol>
+
+  <h3>Formatos de coluna</h3>
+  <p>
+    Cada coluna pode ter um formato específico que define como a IA deve estruturar a
+    resposta:
+  </p>
+  <table>
+    <tr>
+      <th>Formato</th>
+      <th>Descrição</th>
+      <th>Exemplo</th>
+    </tr>
+    <tr>
+      <td>Text</td>
+      <td>Texto livre</td>
+      <td>Resumo da cláusula</td>
+    </tr>
+    <tr>
+      <td>Bulleted List</td>
+      <td>Lista de pontos</td>
+      <td>• Item 1 • Item 2</td>
+    </tr>
+    <tr>
+      <td>Number</td>
+      <td>Valor numérico</td>
+      <td>42</td>
+    </tr>
+    <tr>
+      <td>Percentage</td>
+      <td>Percentual</td>
+      <td>15%</td>
+    </tr>
+    <tr>
+      <td>Monetary Amount</td>
+      <td>Valor monetário</td>
+      <td>R$ 50.000</td>
+    </tr>
+    <tr>
+      <td>Currency</td>
+      <td>Moeda</td>
+      <td>BRL</td>
+    </tr>
+    <tr>
+      <td>Yes/No</td>
+      <td>Sim ou Não</td>
+      <td>Yes</td>
+    </tr>
+    <tr>
+      <td>Date</td>
+      <td>Data</td>
+      <td>2026-07-12</td>
+    </tr>
+    <tr>
+      <td>Tag</td>
+      <td>Etiqueta</td>
+      <td>Alta prioridade</td>
+    </tr>
+  </table>
+
+  <h3>Trabalhando com a grade</h3>
+
+  <h4>Estados das células</h4>
+  <ul>
+    <li><span class="badge badge-gray">Pending</span> Aguardando geração</li>
+    <li><span class="badge badge-blue">Generating</span> IA processando</li>
+    <li><span class="badge badge-green">Done</span> Extração concluída</li>
+    <li><span class="badge badge-purple">Error</span> Falha na extração</li>
+  </ul>
+
+  <h4>Painel lateral</h4>
+  <p>
+    Clique em qualquer célula para abrir o painel lateral, que mostra o conteúdo
+    extraído, a citação da fonte (trecho do documento) e o raciocínio da IA.
+  </p>
+
+  <h4>Chat da revisão</h4>
+  <p>
+    Cada revisão tem um chat dedicado onde você pode fazer perguntas sobre os dados
+    extraídos. A IA pode ler o conteúdo das células para responder.
+  </p>
+
+  <h3>Exportação</h3>
+  <div class="highlight-box">
+    <h4>📤 Exportar para Excel</h4>
+    <p>
+      Clique em <strong>"Export Excel"</strong> para baixar a revisão completa como um
+      arquivo <strong>.xlsx</strong>, com todas as colunas, documentos e dados extraídos.
+    </p>
+  </div>
+
+  <div class="callout callout-tip">
+    <div class="callout-title">💡 Dica de economia</div>
+    <p>
+      A geração tabular usa o <strong>modelo tabular</strong> (configurável em
+      Configurações → Models). Recomendamos usar um modelo menor e mais econômico
+      (como o DeepSeek V4 Flash) para reduzir custos em revisões com muitos documentos.
+    </p>
+  </div>
+</div>
+
+<!-- ========== 05 — WORKFLOWS ========== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">05</div>
+    <div class="section-title">Workflows</div>
+    <div class="section-subtitle">Modelos reutilizáveis de prompt e configuração de colunas</div>
+  </div>
+
+  <p>
+    <strong>Workflows</strong> são modelos reutilizáveis que automatizam tarefas
+    recorrentes. Existem dois tipos:
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">💬</div>
+      <div class="card-title">Assistant Workflow</div>
+      <div class="card-text">
+        Um prompt em texto rico que orienta como a IA deve analisar documentos e
+        responder. Exemplo: "NDA Review" instrui a IA a verificar cláusulas específicas
+        de um acordo de confidencialidade.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Tabular Workflow</div>
+      <div class="card-text">
+        Um conjunto de colunas pré-definidas que pode ser aplicado a uma revisão
+        tabular. Exemplo: "SPA" define colunas para extrair dados de um Acordo de
+        Compra e Venda de Ações.
+      </div>
+    </div>
+  </div>
+
+  <h3>Workflows do sistema</h3>
+  <p>
+    O Mike já vem com <strong>21 workflows pré-configurados</strong> (contribuídos por
+    Mike / Open Legal Products), cobrindo as principais áreas de prática:
+  </p>
+
+  <table>
+    <tr>
+      <th>Tipo</th>
+      <th>Workflow</th>
+      <th>Área</th>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Commercial Lease Review</td>
+      <td>Real Estate</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Corporate Approvals Review</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Draft CP Checklist</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Credit Summary</td>
+      <td>Finance</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Draft Issues List</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Employment Agreement Review</td>
+      <td>General</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Guarantee Agreement Review</td>
+      <td>Finance</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>NDA Review</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>Proofread</td>
+      <td>General</td>
+    </tr>
+    <tr>
+      <td>Assistant</td>
+      <td>SHA Summary</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Change of Control</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Commercial Agreement</td>
+      <td>General</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Commercial Lease</td>
+      <td>Real Estate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Credit Agreement</td>
+      <td>Finance</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>E-Discovery</td>
+      <td>General</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Employment Agreement</td>
+      <td>General</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>LPA</td>
+      <td>Finance</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>NDA</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Shareholder Agreement</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>SPA</td>
+      <td>Corporate</td>
+    </tr>
+    <tr>
+      <td>Tabular</td>
+      <td>Supply Agreement</td>
+      <td>General</td>
+    </tr>
+  </table>
+
+  <p>
+    Workflows do sistema são <strong>somente leitura</strong> — podem ser usados e
+    ocultados, mas não editados ou excluídos.
+  </p>
+
+  <h3>Criando um workflow personalizado</h3>
+
+  <ol class="steps">
+    <li>
+      <div class="step-title">Acesse Workflows</div>
+      <div class="step-text">
+        Clique em <strong>"Workflows"</strong> na barra lateral.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Clique em "New workflow"</div>
+      <div class="step-text">
+        Defina: <strong>título</strong>, <strong>tipo</strong> (Assistant ou Tabular),
+        <strong>idioma</strong>, <strong>área de prática</strong> e
+        <strong>jurisdição</strong>.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Edite o conteúdo</div>
+      <div class="step-text">
+        Para workflows do tipo <strong>Assistant</strong>, escreva o prompt em texto
+        rico no editor. Para workflows do tipo <strong>Tabular</strong>, defina as
+        colunas (nome, formato, prompt, tags). O salvamento é automático.
+      </div>
+    </li>
+    <li>
+      <div class="step-title">Use ou compartilhe</div>
+      <div class="step-text">
+        Clique em <strong>"Use"</strong> para aplicar o workflow em um novo chat ou
+        revisão. Clique em <strong>"Share"</strong> para compartilhar com outros
+        usuários (com permissão de visualização ou edição).
+      </div>
+    </li>
+  </ol>
+
+  <h3>Usando um workflow</h3>
+  <p>
+    Você pode aplicar um workflow de duas formas:
+  </p>
+  <ul>
+    <li>
+      <strong>No Assistant:</strong> ao escrever uma mensagem, clique em
+      <strong>"Workflows"</strong> e selecione um workflow. A IA lerá as instruções
+      do workflow e seguirá o prompt ao responder.
+    </li>
+    <li>
+      <strong>No Tabular Review:</strong> ao criar uma nova revisão, selecione um
+      workflow tabular para preencher as colunas automaticamente. Ou, numa revisão
+      existente, clique em <strong>"Apply Workflow"</strong>.
+    </li>
+  </ul>
+
+  <div class="callout callout-tip">
+    <div class="callout-title">💡 Dica</div>
+    <p>
+      Workflows podem ser exportados como <strong>arquivo ZIP</strong> para backup ou
+      compartilhamento externo. Use o botão "Download" na página de detalhes do workflow.
+    </p>
+  </div>
+</div>
+
+<!-- ========== 06 — CONTA E CONFIGURAÇÕES ========== -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-number">06</div>
+    <div class="section-title">Conta e Configurações</div>
+    <div class="section-subtitle">Perfil · Segurança · Chaves de API · Conectores · Administração</div>
+  </div>
+
+  <p>
+    Acesse as configurações da conta clicando no seu nome na barra lateral. As
+    configurações estão organizadas em abas:
+  </p>
+
+  <h3>Perfil (General)</h3>
+  <ul>
+    <li><strong>Nome de exibição</strong> e <strong>organização</strong> — editáveis.</li>
+    <li><strong>E-mail</strong> — pode ser alterado (requer MFA se ativado).</li>
+    <li><strong>Excluir conta</strong> — remove permanentemente a conta e todos os dados (requer MFA).</li>
+  </ul>
+
+  <h3>Features</h3>
+  <ul>
+    <li><strong>Pesquisa Jurídica (CourtListener):</strong> ativa a pesquisa de jurisprudência americana no assistant.</li>
+  </ul>
+
+  <h3>Privacidade e Dados</h3>
+  <ul>
+    <li><strong>Exportar dados:</strong> baixe chats (JSON), revisões tabulares (JSON) ou conta completa.</li>
+    <li><strong>Excluir dados:</strong> remova todos os chats, revisões ou projetos (requer MFA).</li>
+  </ul>
+
+  <h3>Segurança</h3>
+  <ul>
+    <li><strong>Autenticação Multifator (MFA):</strong> ative com um app autenticador (TOTP). Escaneie o QR code e verifique com um código de 6 dígitos.</li>
+    <li><strong>MFA no login:</strong> force a verificação MFA a cada login (se um fator verificado existir).</li>
+  </ul>
+
+  <h3>Preferências de Modelo</h3>
+  <ul>
+    <li><strong>Modelo de títulos:</strong> usado para gerar títulos de chat e extrações leves.</li>
+    <li><strong>Modelo tabular:</strong> usado na geração de células de revisão tabular.</li>
+  </ul>
+
+  <h3>Chaves de API</h3>
+  <ul>
+    <li><strong>DeepSeek API Key:</strong> adicione sua chave pessoal. Se a chave for gerenciada pelo servidor (Atlas), aparece como "Configured by Atlas".</li>
+    <li><strong>CourtListener API Key:</strong> opcional, para dados de jurisprudência ao vivo.</li>
+  </ul>
+
+  <h3>Conectores (MCP)</h3>
+  <p>
+    Adicione servidores de ferramentas externas via <strong>Model Context Protocol
+    (MCP)</strong>. Configure por URL com token Bearer e headers personalizados.
+    Suporta OAuth para servidores que exigem autorização. Habilite/desabilite
+    conectores e ferramentas individuais.
+  </p>
+
+  <h3>Administração de Usuários <span class="badge badge-purple">admin</span></h3>
+  <p>
+    Disponível apenas para administradores. Permite:
+  </p>
+  <ul>
+    <li><strong>Listar usuários:</strong> e-mail, role, status, data de criação, último login.</li>
+    <li><strong>Criar usuário:</strong> e-mail + role (member/admin). Gera senha temporária (mostrada uma vez).</li>
+    <li><strong>Alterar role:</strong> promover/demover entre admin e member.</li>
+    <li><strong>Desabilitar/Habilitar:</strong> bloqueia o acesso do usuário.</li>
+    <li><strong>Resetar senha:</strong> gera nova senha temporária.</li>
+    <li><strong>Revogar sessões:</strong> força re-login.</li>
+  </ul>
+
+  <div class="callout callout-warning">
+    <div class="callout-title">⚠️ Proteções do sistema</div>
+    <p>
+      O sistema impede: auto-desabilitamento, remoção do último administrador ativo e
+      acesso de membros à área de administração (403). Todas as ações administrativas
+      são registradas no <strong>log de auditoria</strong>.
+    </p>
+  </div>
+</div>
+
+<!-- ========== FOOTER ========== -->
+<div class="footer">
+  <div class="footer-logo">atlas<span>gov</span></div>
+  <div class="footer-tagline">Governança simples, acessível e digital</div>
+  <div class="footer-gradient"></div>
+  <div class="footer-info">
+    Manual do Usuário — Mike v1.0<br>
+    Atlas Governance · 2026<br>
+    https://mike.agov.app
+  </div>
+</div>
+
+</body>
+</html>

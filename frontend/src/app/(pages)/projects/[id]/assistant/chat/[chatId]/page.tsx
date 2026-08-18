@@ -581,10 +581,39 @@ export default function ProjectAssistantChatPage({ params }: Props) {
 
     const handleChatDrop = (e: React.DragEvent) => {
         e.preventDefault();
+        // Internal doc drag from explorer
         const docId = e.dataTransfer.getData("application/mike-doc");
-        if (!docId) return;
-        const doc = project?.documents?.find((d) => d.id === docId);
-        if (doc) chatInputRef.current?.addDoc(doc);
+        if (docId) {
+            const doc = project?.documents?.find((d) => d.id === docId);
+            if (doc) chatInputRef.current?.addDoc(doc);
+            return;
+        }
+        // External file drop — upload and attach
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length) {
+            void (async () => {
+                setUploading(true);
+                try {
+                    const uploaded = await Promise.all(
+                        files.map((f) => uploadProjectDocument(projectId, f)),
+                    );
+                    setProject((prev) => {
+                        if (!prev) return prev;
+                        return {
+                            ...prev,
+                            documents: [...(prev.documents ?? []), ...uploaded],
+                        };
+                    });
+                    uploaded.forEach((doc) =>
+                        chatInputRef.current?.addDoc(doc),
+                    );
+                } catch (err) {
+                    console.error("Upload failed:", err);
+                } finally {
+                    setUploading(false);
+                }
+            })();
+        }
     };
 
     // ── Chat actions ──────────────────────────────────────────────────────────
@@ -1267,6 +1296,7 @@ export default function ProjectAssistantChatPage({ params }: Props) {
                                 hideAddDocButton
                                 projectName={project?.name}
                                 projectCmNumber={project?.cm_number}
+                                projectId={projectId}
                             />
                         </div>
                     </div>

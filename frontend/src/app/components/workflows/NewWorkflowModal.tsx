@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Table2, Upload } from "lucide-react";
-import { createWorkflow, updateWorkflow } from "@/app/lib/mikeApi";
+import { Loader2, MessageSquare, Table2, Upload } from "lucide-react";
+import { createWorkflow, updateWorkflow, extractWorkflowText } from "@/app/lib/mikeApi";
 import type { Workflow } from "../shared/types";
 import { PRACTICE_OPTIONS } from "./practices";
 import { Modal } from "../modals/Modal";
@@ -10,6 +10,8 @@ import { ModalFieldLabel } from "../modals/ModalFieldLabel";
 import { ModalSegmentedToggle } from "../modals/ModalSegmentedToggle";
 import { ModalSelect } from "../modals/ModalSelect";
 import { ModalTextInput } from "../modals/ModalTextInput";
+import { useFileDropZone } from "@/app/hooks/useFileDropZone";
+import { DropZoneOverlay } from "../shared/DropZoneOverlay";
 
 const DEFAULT_LANGUAGE = "English";
 const DEFAULT_PRACTICE = "General Transactions";
@@ -193,10 +195,52 @@ export function NewWorkflowModal({
         null,
     );
     const [markdownImportError, setMarkdownImportError] = useState("");
+    const [importingPrompt, setImportingPrompt] = useState(false);
     const customLanguageInputRef = useRef<HTMLInputElement>(null);
     const customInputRef = useRef<HTMLInputElement>(null);
     const customJurisdictionInputRef = useRef<HTMLInputElement>(null);
     const markdownInputRef = useRef<HTMLInputElement>(null);
+
+    const processPromptFile = useCallback(async (file: File) => {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        const isTextFile = ["md", "markdown", "txt"].includes(ext ?? "");
+        const isDocFile = ["docx", "doc", "pdf"].includes(ext ?? "");
+
+        if (!isTextFile && !isDocFile) {
+            setImportedSkillMd("");
+            setImportedSkillName(null);
+            setMarkdownImportError("Choose a .md, .docx, or .pdf file.");
+            return;
+        }
+
+        setImportingPrompt(true);
+        setMarkdownImportError("");
+        try {
+            let text: string;
+            if (isTextFile) {
+                text = await file.text();
+            } else {
+                const result = await extractWorkflowText(file);
+                text = result.text;
+            }
+            setImportedSkillMd(text);
+            setImportedSkillName(file.name);
+        } catch {
+            setImportedSkillMd("");
+            setImportedSkillName(null);
+            setMarkdownImportError("Could not read that file.");
+        } finally {
+            setImportingPrompt(false);
+        }
+    }, []);
+
+    const { isDragOver, handlers: dropHandlers } = useFileDropZone({
+        onFiles: (files) => {
+            if (files.length > 0) processPromptFile(files[0]);
+        },
+        validateDocuments: false,
+        single: true,
+    });
 
     const isEditing = !!editWorkflow;
     const isOtherLanguage = language === "Other";
@@ -246,6 +290,7 @@ export function NewWorkflowModal({
         setImportedSkillMd("");
         setImportedSkillName(null);
         setMarkdownImportError("");
+        setImportingPrompt(false);
         if (markdownInputRef.current) {
             markdownInputRef.current.value = "";
         }
@@ -386,28 +431,9 @@ export function NewWorkflowModal({
         const file = e.target.files?.[0];
         setMarkdownImportError("");
         if (!file) return;
-
-        const normalizedName = file.name.toLowerCase();
-        if (
-            !normalizedName.endsWith(".md") &&
-            !normalizedName.endsWith(".markdown")
-        ) {
-            setImportedSkillMd("");
-            setImportedSkillName(null);
-            setMarkdownImportError("Choose a .md or .markdown file.");
-            e.target.value = "";
-            return;
-        }
-
-        try {
-            const text = await file.text();
-            setImportedSkillMd(text);
-            setImportedSkillName(file.name);
-        } catch {
-            setImportedSkillMd("");
-            setImportedSkillName(null);
-            setMarkdownImportError("Could not read that markdown file.");
-            e.target.value = "";
+        await processPromptFile(file);
+        if (markdownInputRef.current) {
+            markdownInputRef.current.value = "";
         }
     }
 
@@ -434,8 +460,14 @@ export function NewWorkflowModal({
             secondaryAction={
                 !isEditing && type === "assistant"
                     ? {
-                          label: importedSkillName ?? "Upload markdown",
-                          icon: <Upload className="h-3.5 w-3.5" />,
+                          label: importingPrompt
+                              ? "Extracting…"
+                              : importedSkillName ?? "Upload file",
+                          icon: importingPrompt ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                              <Upload className="h-3.5 w-3.5" />
+                          ),
                           onClick: () => markdownInputRef.current?.click(),
                           disabled: loading,
                       }
@@ -445,8 +477,10 @@ export function NewWorkflowModal({
             <form
                 id={formId}
                 onSubmit={handleSubmit}
-                className="flex min-h-0 flex-1 flex-col"
+                className="relative flex min-h-0 flex-1 flex-col"
+                {...dropHandlers}
             >
+                <DropZoneOverlay isDragOver={isDragOver} />
                 <div className="space-y-6">
                     <div>
                         <ModalFieldLabel htmlFor="workflow-title">
@@ -645,7 +679,7 @@ export function NewWorkflowModal({
                     ref={markdownInputRef}
                     type="file"
                     className="hidden"
-                    accept=".md,.markdown,text/markdown,text/x-markdown,text/plain"
+                    accept=".md,.markdown,.txt,.docx,.doc,.pdf"
                     onChange={handleMarkdownImport}
                 />
             </form>

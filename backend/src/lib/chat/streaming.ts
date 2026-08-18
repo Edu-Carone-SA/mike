@@ -307,9 +307,13 @@ export async function runLLMStream(params: {
   };
 
   const flushText = (opts: { emit?: boolean } = {}) => {
-    if (!iterText) return;
-    fullText += iterText;
+    // Always flush the visible tail buffer first — even if iterText
+    // was already consumed by a prior flushText call, the tail buffer
+    // can still hold up to (CITATIONS_OPEN_TAG.length - 1) chars that
+    // were withheld pending a possible citation-open marker.
     flushVisibleTail(opts);
+    if (!iterText && !iterVisibleText) return;
+    if (iterText) fullText += iterText;
     if (iterVisibleText) {
       events.push({ type: "content", text: iterVisibleText });
     }
@@ -468,6 +472,10 @@ export async function runLLMStream(params: {
           });
         }
         for (const askInputsEvent of askInputsEvents) {
+          // Belt-and-suspenders: ensure no text is trapped in the
+          // visibleTailBuffer before we emit ask_inputs and throw
+          // AssistantStreamAskInputsPause (which ends the turn).
+          flushText();
           write(`data: ${JSON.stringify(askInputsEvent)}\n\n`);
           events.push(askInputsEvent);
         }

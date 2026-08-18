@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { supabase } from "@/app/lib/supabase";
 import { PdfView } from "../shared/views/PdfView";
@@ -90,7 +90,7 @@ interface Props {
  * the viewer. No selector UI — caller picks the one thing to show; if the
  * user wants a different citation/edit, the panel gets a new tab.
  */
-export function DocPanel({
+export const DocPanel = React.memo(function DocPanel({
     documentId,
     filename,
     versionId,
@@ -235,7 +235,7 @@ export function DocPanel({
             </div>
         </div>
     );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Header variants
