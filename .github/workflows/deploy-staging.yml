@@ -284,6 +284,7 @@ jobs:
                 {"name": "SUPABASE_URL", "valueFrom": "${SECRET_ARN}:SUPABASE_URL::"},
                 {"name": "SUPABASE_SECRET_KEY", "valueFrom": "${SECRET_ARN}:SUPABASE_SECRET_KEY::"},
                 {"name": "DEEPSEEK_API_KEY", "valueFrom": "${SECRET_ARN}:DEEPSEEK_API_KEY::"},
+                {"name": "OPENROUTER_API_KEY", "valueFrom": "${SECRET_ARN}:OPENROUTER_API_KEY::"},
                 {"name": "DOWNLOAD_SIGNING_SECRET", "valueFrom": "${SECRET_ARN}:DOWNLOAD_SIGNING_SECRET::"},
                 {"name": "USER_API_KEYS_ENCRYPTION_SECRET", "valueFrom": "${SECRET_ARN}:USER_API_KEYS_ENCRYPTION_SECRET::"},
                 {"name": "S3_BUCKET_NAME", "valueFrom": "${SECRET_ARN}:S3_BUCKET_NAME::"},
