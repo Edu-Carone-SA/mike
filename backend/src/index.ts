@@ -14,6 +14,7 @@ import { userRouter } from "./routes/user";
 import { downloadsRouter } from "./routes/downloads";
 import { caseLawRouter } from "./routes/caseLaw";
 import { adminRouter } from "./routes/admin";
+import { searchRouter } from "./routes/search";
 import { validateEnv, getEnv } from "./lib/env";
 import { checkSupabaseConnectivity } from "./lib/supabase";
 import { checkStorageConnectivity } from "./lib/storage";
@@ -165,6 +166,7 @@ app.use("/users", userRouter);
 app.use("/download", downloadsRouter);
 app.use("/case-law", caseLawRouter);
 app.use("/admin", adminRouter);
+app.use("/search", searchRouter);
 
 const VERSION = process.env.npm_package_version ?? "local";
 const COMMIT_SHA = process.env.COMMIT_SHA ?? "unknown";

@@ -1,16 +1,24 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Server-side Supabase client using the service role key.
  * Bypasses RLS — only use in API routes after verifying the user.
+ *
+ * A singleton client is cached so we don't create a new client on every
+ * request. The service role key is read once at first use; subsequent
+ * calls reuse the same client instance.
  */
+let cachedClient: SupabaseClient | null = null;
+
 export function createServerSupabase() {
+  if (cachedClient) return cachedClient;
   const url = process.env.SUPABASE_URL || "";
   const key = process.env.SUPABASE_SECRET_KEY || "";
   if (!url || !key) {
     throw new Error("SUPABASE_URL and SUPABASE_SECRET_KEY must be set");
   }
-  return createClient(url, key, { auth: { persistSession: false } });
+  cachedClient = createClient(url, key, { auth: { persistSession: false } });
+  return cachedClient;
 }
 
 export async function checkSupabaseConnectivity(): Promise<boolean> {
@@ -37,6 +45,7 @@ export async function getUserIdFromRequest(req: Request): Promise<string> {
       status: 401,
     });
   }
+
   const token = auth.slice(7).trim();
 
   const supabaseUrl = process.env.SUPABASE_URL || "";

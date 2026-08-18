@@ -774,7 +774,7 @@ export function TRChatPanel({
 }: Props) {
     const { profile, updateModelPreference } = useUserProfile();
     const apiKeys = profile?.apiKeys;
-    const currentModel = profile?.tabularModel ?? "deepseek-v4-flash";
+    const currentModel = profile?.tabularModel ?? "deepseek/deepseek-chat";
     const [apiKeyModalProvider, setApiKeyModalProvider] =
         useState<ModelProvider | null>(null);
     const [chats, setChats] = useState<TRChat[]>([]);

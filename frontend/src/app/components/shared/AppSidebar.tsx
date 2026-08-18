@@ -11,6 +11,9 @@ import {
     User,
     ChevronsUpDown,
     ChevronDown,
+    Search,
+    FileText,
+    X,
 } from "lucide-react";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { useUserProfile } from "@/app/contexts/UserProfileContext";
@@ -19,7 +22,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { MikeIcon } from "@/app/components/chat/mike-icon";
 import { SidebarChatItem } from "@/app/components/shared/SidebarChatItem";
-import { listProjects } from "@/app/lib/mikeApi";
+import { listProjects, globalSearch, type SearchResult } from "@/app/lib/mikeApi";
 import type { Project } from "@/app/components/shared/types";
 import { cn } from "@/app/lib/utils";
 
@@ -62,6 +65,30 @@ export function AppSidebar({ isOpen, onToggle }: AppSidebarProps) {
     const [recentProjects, setRecentProjects] = useState<Project[] | null>(
         null,
     );
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<SearchResult | null>(
+        null,
+    );
+    const [searching, setSearching] = useState(false);
+
+    useEffect(() => {
+        if (!searchQuery.trim()) {
+            setSearchResults(null);
+            return;
+        }
+        setSearching(true);
+        const timer = setTimeout(async () => {
+            try {
+                const results = await globalSearch(searchQuery.trim());
+                setSearchResults(results);
+            } catch {
+                setSearchResults(null);
+            } finally {
+                setSearching(false);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     useEffect(() => {
         if (!user) return;
@@ -225,6 +252,115 @@ export function AppSidebar({ isOpen, onToggle }: AppSidebarProps) {
 
                 {isOpen && (
                     <div className="mt-4 flex-1 min-h-0 flex flex-col gap-4">
+                        {/* Search */}
+                        <div className="px-2.5">
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search chats, projects, docs..."
+                                    className="w-full rounded-lg bg-gray-100/80 border border-gray-200/50 pl-8 pr-7 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 focus:bg-white"
+                                />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery("")}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            {searchResults && (
+                                <div className="mt-2 space-y-1 max-h-[300px] overflow-y-auto">
+                                    {searchResults.chats.length === 0 &&
+                                        searchResults.projects.length === 0 &&
+                                        searchResults.documents.length === 0 && (
+                                            <p className="text-xs text-gray-400 px-2 py-1">
+                                                No results found
+                                            </p>
+                                        )}
+                                    {searchResults.chats.length > 0 && (
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-gray-400 px-2 py-1">
+                                                Chats
+                                            </p>
+                                            {searchResults.chats.map((chat) => (
+                                                <button
+                                                    key={chat.id}
+                                                    onClick={() => {
+                                                        router.push(
+                                                            chat.project_id
+                                                                ? `/projects/${chat.project_id}/assistant/chat/${chat.id}`
+                                                                : `/assistant/chat/${chat.id}`,
+                                                        );
+                                                        setSearchQuery("");
+                                                    }}
+                                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <MessageSquare className="h-3 w-3 shrink-0 text-gray-400" />
+                                                    <span className="truncate">
+                                                        {chat.title ?? "Untitled"}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {searchResults.projects.length > 0 && (
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-gray-400 px-2 py-1">
+                                                Projects
+                                            </p>
+                                            {searchResults.projects.map((project) => (
+                                                <button
+                                                    key={project.id}
+                                                    onClick={() => {
+                                                        router.push(`/projects/${project.id}`);
+                                                        setSearchQuery("");
+                                                    }}
+                                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <Folder className="h-3 w-3 shrink-0 text-gray-400" />
+                                                    <span className="truncate">
+                                                        {project.name}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {searchResults.documents.length > 0 && (
+                                        <div>
+                                            <p className="text-[10px] uppercase tracking-wider text-gray-400 px-2 py-1">
+                                                Documents
+                                            </p>
+                                            {searchResults.documents.map((doc) => (
+                                                <button
+                                                    key={doc.id}
+                                                    onClick={() => {
+                                                        if (doc.project_id) {
+                                                            router.push(`/projects/${doc.project_id}`);
+                                                        }
+                                                        setSearchQuery("");
+                                                    }}
+                                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <FileText className="h-3 w-3 shrink-0 text-gray-400" />
+                                                    <span className="truncate">
+                                                        {doc.filename}
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {searching && !searchResults && (
+                                <p className="text-xs text-gray-400 px-2 py-1">
+                                    Searching...
+                                </p>
+                            )}
+                        </div>
                         {/* Recent Projects */}
                         <div>
                             <button

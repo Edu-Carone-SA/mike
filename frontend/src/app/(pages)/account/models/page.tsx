@@ -15,6 +15,7 @@ import type { ApiKeyState } from "@/app/lib/mikeApi";
 import {
     MODELS,
     SETTINGS_MODELS,
+    GROUP_ORDER,
     type ModelOption,
 } from "@/app/components/assistant/ModelToggle";
 import {
@@ -91,7 +92,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.titleModel ??
                             profile?.titleModel ??
-                            "deepseek-v4-flash"
+                            "deepseek/deepseek-chat"
                         }
                         options={SETTINGS_MODELS}
                         apiKeys={profile?.apiKeys}
@@ -113,7 +114,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.tabularModel ??
                             profile?.tabularModel ??
-                            "deepseek-v4-flash"
+                            "deepseek/deepseek-chat"
                         }
                         options={MODELS}
                         apiKeys={profile?.apiKeys}
@@ -145,11 +146,6 @@ function ModelPreferenceDropdown({
     const [isOpen, setIsOpen] = useState(false);
     const selected = options.find((m) => m.id === value);
     const selectedAvailable = apiKeys ? isModelAvailable(value, apiKeys) : true;
-    const groups: ("Anthropic" | "Google" | "OpenAI")[] = [
-        "Anthropic",
-        "Google",
-        "OpenAI",
-    ];
 
     return (
         <DropdownMenu onOpenChange={setIsOpen}>
@@ -183,7 +179,7 @@ function ModelPreferenceDropdown({
                 style={{ width: "var(--radix-dropdown-menu-trigger-width)" }}
                 align="start"
             >
-                {groups.map((group, gi) => {
+                {GROUP_ORDER.map((group, gi) => {
                     const items = options.filter((m) => m.group === group);
                     if (items.length === 0) return null;
                     return (

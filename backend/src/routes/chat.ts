@@ -415,18 +415,25 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
         );
         const titleText = await completeText({
             model: title_model,
-            user: `Generate a concise title (3–6 words) for a chat in an AI Legal Platform that starts with this message. The title should describe the topic or document — do NOT include words like "Legal Assistant", "AI", "Chat", or any similar prefix. If there is not enough information to generate a title, return exactly "${TITLE_FALLBACK}". Return only the title, no quotes or punctuation.\n\nMessage: ${message.slice(0, 500)}`,
+            user: `Generate a concise title (3–6 words) for a chat in an AI Legal Platform based on the user's first message below. The title should describe the topic, document type, or legal task — for example "NDA Review", "Lease Agreement Analysis", "Due Diligence Checklist". Do NOT include words like "Legal Assistant", "AI", "Chat", "Query", or any similar prefix. If the message is too short or vague to determine a topic, return exactly "${TITLE_FALLBACK}". Return only the title text, no quotes, no punctuation, no explanation.\n\nMessage: ${message.slice(0, 500)}`,
             maxTokens: 64,
             apiKeys: api_keys,
         });
         const title = normalizeGeneratedTitle(titleText);
 
+        // If the LLM returned the fallback, use the first 120 chars of
+        // the user's message as a more useful title.
+        const finalTitle =
+            title === TITLE_FALLBACK && message.length > 0
+                ? message.slice(0, 120).trim() || TITLE_FALLBACK
+                : title;
+
         await db
             .from("chats")
-            .update({ title })
+            .update({ title: finalTitle })
             .eq("id", chatId);
 
-        res.json({ title });
+        res.json({ title: finalTitle });
     } catch (err) {
         console.error("[generate-title]", safeErrorLog(err));
         res.status(500).json({ detail: "Failed to generate title" });
