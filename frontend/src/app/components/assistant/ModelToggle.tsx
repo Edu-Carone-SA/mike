@@ -20,12 +20,13 @@ export interface ModelOption {
 }
 
 export const MODELS: ModelOption[] = [
-    { id: "deepseek/deepseek-chat", label: "DeepSeek V4 Flash", group: "OpenRouter" },
+    { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", group: "OpenRouter" },
+    { id: "z-ai/glm-5.3", label: "GLM 5.3", group: "OpenRouter" },
 ];
 
 export const SETTINGS_MODELS: ModelOption[] = [...MODELS];
 
-export const DEFAULT_MODEL_ID = "deepseek/deepseek-chat";
+export const DEFAULT_MODEL_ID = "deepseek/deepseek-v4-flash";
 
 export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 

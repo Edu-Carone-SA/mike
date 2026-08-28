@@ -124,7 +124,7 @@ export function TRView({ reviewId, projectId }: Props) {
     const router = useRouter();
     const { profile } = useUserProfile();
     const apiKeys = profile?.apiKeys;
-    const tabularModel = profile?.tabularModel ?? "deepseek/deepseek-chat";
+    const tabularModel = profile?.tabularModel ?? "deepseek/deepseek-v4-flash";
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);

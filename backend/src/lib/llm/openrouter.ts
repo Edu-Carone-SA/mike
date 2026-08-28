@@ -7,6 +7,7 @@ import type {
   StreamChatResult,
 } from "./types";
 import { createRawLlmStreamRecorder, logRawLlmStream } from "./rawStreamLog";
+import { OPENROUTER_FALLBACK } from "./models";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_OUTPUT_TOKENS = 65536;
@@ -202,28 +203,79 @@ async function createChatCompletion(params: {
     body.reasoning = { effort: "medium" };
   }
 
-  const response = await fetch(OPENROUTER_CHAT_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://mike.agov.app",
-      "X-Title": "Mike Atlas",
-    },
-    body: JSON.stringify(body),
-    signal: params.signal,
-  });
+  // Retry with exponential backoff on transient upstream failures (429 rate
+  // limit, 5xx, 408). OpenRouter routes models across providers (e.g.
+  // deepseek/deepseek-chat via Deepinfra) — a 429 often means the specific
+  // upstream engine is overloaded, and a short retry usually succeeds.
+  // If the primary model exhausts retries on a transient error, fall back to
+  // the secondary model (see OPENROUTER_FALLBACK) for one last attempt.
+  const MAX_ATTEMPTS = 3;
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    const err = new Error(
-      `OpenRouter request failed (${response.status}): ${text || response.statusText}`,
-    );
-    (err as { status?: number }).status = response.status;
-    throw err;
+  const requestOnce = (modelId: string) =>
+    fetch(OPENROUTER_CHAT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${params.apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://mike.agov.app",
+        "X-Title": "Mike Atlas",
+      },
+      body: JSON.stringify({ ...body, model: modelId }),
+      signal: params.signal,
+    });
+
+  const isTransient = (status?: number) =>
+    status === 429 || status === 408 || (status !== undefined && status >= 500);
+
+  for (const modelId of [params.model, OPENROUTER_FALLBACK[params.model]].filter(
+    (m): m is string => !!m,
+  )) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await requestOnce(modelId);
+
+        if (response.ok) return response;
+
+        const text = await response.text().catch(() => "");
+        const err = new Error(
+          `OpenRouter request failed (${response.status})${modelId !== params.model ? ` [fallback ${modelId}]` : ""}: ${text || response.statusText}`,
+        );
+        (err as { status?: number }).status = response.status;
+        lastError = err;
+
+        if (!isTransient(response.status)) throw err;
+
+        // OpenRouter sends Retry-After when available; fall back to
+        // exponential backoff (2s, 4s).
+        const retryAfterHeader = response.headers.get("retry-after");
+        const retryAfterMs = retryAfterHeader
+          ? Number(retryAfterHeader) * 1000
+          : NaN;
+        const delayMs =
+          Number.isFinite(retryAfterMs) && retryAfterMs > 0
+            ? Math.min(retryAfterMs, 30_000)
+            : 2_000 * attempt;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } catch (err) {
+        // Network-level errors (ECONNRESET, ETIMEDOUT, abort) — rethrow aborts
+        // immediately, retry transient network errors.
+        if (err instanceof Error && err.name === "AbortError") throw err;
+        // Non-transient HTTP errors (4xx) must not be retried — rethrow.
+        const status = (err as { status?: number }).status;
+        if (status !== undefined && !isTransient(status)) throw err;
+        if (attempt === MAX_ATTEMPTS) {
+          // Transient failure exhausted retries — break to try fallback model.
+          lastError = err instanceof Error ? err : new Error(String(err));
+          break;
+        }
+        lastError = err as Error;
+        await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+      }
+    }
   }
 
-  return response;
+  throw lastError ?? new Error("OpenRouter request failed after retries");
 }
 
 export async function streamOpenRouter(
