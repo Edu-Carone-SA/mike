@@ -202,28 +202,66 @@ async function createChatCompletion(params: {
     body.reasoning = { effort: "medium" };
   }
 
-  const response = await fetch(OPENROUTER_CHAT_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://mike.agov.app",
-      "X-Title": "Mike Atlas",
-    },
-    body: JSON.stringify(body),
-    signal: params.signal,
-  });
+  // Retry with exponential backoff on transient upstream failures (429 rate
+  // limit, 5xx, 408). OpenRouter routes models across providers (e.g.
+  // deepseek/deepseek-chat via Deepinfra) — a 429 often means the specific
+  // upstream engine is overloaded, and a short retry usually succeeds.
+  const MAX_ATTEMPTS = 3;
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    const err = new Error(
-      `OpenRouter request failed (${response.status}): ${text || response.statusText}`,
-    );
-    (err as { status?: number }).status = response.status;
-    throw err;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(OPENROUTER_CHAT_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${params.apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://mike.agov.app",
+          "X-Title": "Mike Atlas",
+        },
+        body: JSON.stringify(body),
+        signal: params.signal,
+      });
+
+      if (response.ok) return response;
+
+      const text = await response.text().catch(() => "");
+      const err = new Error(
+        `OpenRouter request failed (${response.status}): ${text || response.statusText}`,
+      );
+      (err as { status?: number }).status = response.status;
+      lastError = err;
+
+      const retryable =
+        response.status === 429 ||
+        response.status === 408 ||
+        response.status >= 500;
+      if (!retryable || attempt === MAX_ATTEMPTS) throw err;
+
+      // OpenRouter sends Retry-After when available; fall back to
+      // exponential backoff (2s, 4s).
+      const retryAfterHeader = response.headers.get("retry-after");
+      const retryAfterMs = retryAfterHeader
+        ? Number(retryAfterHeader) * 1000
+        : NaN;
+      const delayMs =
+        Number.isFinite(retryAfterMs) && retryAfterMs > 0
+          ? Math.min(retryAfterMs, 30_000)
+          : 2_000 * attempt;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    } catch (err) {
+      // Network-level errors (ECONNRESET, ETIMEDOUT, abort) — rethrow aborts
+      // immediately, retry transient network errors once.
+      if (err instanceof Error && err.name === "AbortError") throw err;
+      if (attempt === MAX_ATTEMPTS || !lastError) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+      lastError = err as Error;
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+    }
   }
 
-  return response;
+  throw lastError ?? new Error("OpenRouter request failed after retries");
 }
 
 export async function streamOpenRouter(
