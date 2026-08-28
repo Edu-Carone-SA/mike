@@ -92,7 +92,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.titleModel ??
                             profile?.titleModel ??
-                            "deepseek/deepseek-chat"
+                            "deepseek/deepseek-v4-flash"
                         }
                         options={SETTINGS_MODELS}
                         apiKeys={profile?.apiKeys}
@@ -114,7 +114,7 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.tabularModel ??
                             profile?.tabularModel ??
-                            "deepseek/deepseek-chat"
+                            "deepseek/deepseek-v4-flash"
                         }
                         options={MODELS}
                         apiKeys={profile?.apiKeys}
