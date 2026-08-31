@@ -10,7 +10,10 @@ import { createRawLlmStreamRecorder, logRawLlmStream } from "./rawStreamLog";
 import { OPENROUTER_FALLBACK } from "./models";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MAX_OUTPUT_TOKENS = 65536;
+// Output budget: reserving a huge output window eats into the model's input
+// context (OpenRouter counts input + reserved output against the context
+// limit). 8k is plenty for a chat answer; documents live in the input.
+const MAX_OUTPUT_TOKENS = 8192;
 
 type ChatToolCall = {
   id: string;
@@ -178,6 +181,64 @@ function parseAccumulatedToolCalls(
   return calls;
 }
 
+/**
+ * Stream-filter that suppresses leaked tool-call markup from the content
+ * channel. Some OpenRouter-routed models (observed with DeepSeek V4 Flash)
+ * echo their internal DSML tool-call protocol in the `content` field —
+ * e.g. `<｜DSML｜tool_calls> <｜DSML｜invoke name="generate_excel"> ...` —
+ * in addition to emitting proper structured tool_calls. That markup must
+ * never reach the chat UI.
+ *
+ * Hold-back approach: from the moment the ｜DSML｜ marker is seen, suppress
+ * the rest of the content channel (the structured tool_calls drive the
+ * actual execution anyway). Before the marker, hold back a short tail in
+ * case a marker is split across deltas.
+ */
+export class DsmlContentFilter {
+  private pending = "";
+  private suppressing = false;
+  private static MARKER = "｜DSML｜";
+  private static HOLD_TAIL_MAX = 8; // longest partial-marker prefix to hold
+
+  /** Feed a raw content delta; returns the clean text to emit (may be ""). */
+  push(delta: string): string {
+    if (this.suppressing) return "";
+    this.pending += delta;
+    const idx = this.pending.indexOf(DsmlContentFilter.MARKER);
+    if (idx !== -1) {
+      let clean = this.pending.slice(0, idx);
+      // The leaked markup opens with "<｜DSML｜..."; drop a dangling "<" that
+      // immediately precedes the marker — it is markup, not content.
+      if (clean.endsWith("<")) clean = clean.slice(0, -1);
+      this.pending = "";
+      this.suppressing = true;
+      return clean;
+    }
+    const holdFrom = Math.max(
+      0,
+      this.pending.length - DsmlContentFilter.HOLD_TAIL_MAX,
+    );
+    for (let i = this.pending.length - 1; i >= holdFrom; i--) {
+      const candidate = this.pending.slice(i);
+      if (DsmlContentFilter.MARKER.startsWith(candidate)) {
+        const emit = this.pending.slice(0, i);
+        this.pending = candidate;
+        return emit;
+      }
+    }
+    const out = this.pending;
+    this.pending = "";
+    return out;
+  }
+
+  /** Flush at end of stream; returns any leftover clean text. */
+  flush(): string {
+    const out = this.suppressing ? "" : this.pending;
+    this.pending = "";
+    return out;
+  }
+}
+
 async function createChatCompletion(params: {
   model: string;
   messages: ChatMessage[];
@@ -324,6 +385,8 @@ export async function streamOpenRouter(
       let buffer = "";
       let sawReasoning = false;
       let finishReason: string | null = null;
+      // Suppresses leaked DSML tool-call markup from the content channel.
+      const dsmlFilter = new DsmlContentFilter();
 
       while (true) {
         throwIfAborted(params.abortSignal);
@@ -378,10 +441,13 @@ export async function streamOpenRouter(
             callbacks.onReasoningDelta?.(choice.delta.reasoning_content);
           }
 
-          // Content delta
+          // Content delta — filtered to strip leaked DSML tool markup.
           if (typeof choice.delta.content === "string" && choice.delta.content) {
-            fullText += choice.delta.content;
-            callbacks.onContentDelta?.(choice.delta.content);
+            const clean = dsmlFilter.push(choice.delta.content);
+            if (clean) {
+              fullText += clean;
+              callbacks.onContentDelta?.(clean);
+            }
           }
 
           // Tool call deltas
@@ -399,6 +465,12 @@ export async function streamOpenRouter(
 
       if (sawReasoning) callbacks.onReasoningBlockEnd?.();
       throwIfAborted(params.abortSignal);
+
+      const leftover = dsmlFilter.flush();
+      if (leftover) {
+        fullText += leftover;
+        callbacks.onContentDelta?.(leftover);
+      }
 
       const toolCalls = parseAccumulatedToolCalls(toolCallAccumulators);
 
