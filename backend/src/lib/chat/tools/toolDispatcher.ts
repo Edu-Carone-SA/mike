@@ -48,6 +48,7 @@ import {
   findTextMatches,
   runEditDocument,
   safeGeneratedFilename,
+  semanticGeneratedTitle,
   type DocEditedResult,
   type TurnEditState,
   type TurnReadState,
@@ -1819,7 +1820,7 @@ export async function runToolCalls(
         "docx",
       );
     } else if (tc.function.name === "generate_excel") {
-      const title = args.title as string;
+      const title = semanticGeneratedTitle(args.title, args.sheets as unknown[]);
       devLog(`[generate_excel] title="${title}"`);
       const previewFilename = safeGeneratedFilename(title, "xlsx");
       write(

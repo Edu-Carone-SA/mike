@@ -22,7 +22,7 @@ import {
     getUserModelSettings,
 } from "../lib/userSettings";
 import { checkProjectAccess } from "../lib/access";
-import { safeErrorLog, safeErrorMessage } from "../lib/safeError";
+import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeError";
 
 export const chatRouter = Router();
 
@@ -747,7 +747,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             return;
         }
         console.error("[chat/stream] error:", safeErrorLog(err));
-        const message = safeErrorMessage(err, "Stream error");
+        const message = userFacingLlmError(err, "Stream error");
         const errorEvents = err instanceof AssistantStreamError
             ? stripTransientAssistantEvents(err.events)
             : [{ type: "error" as const, message }];

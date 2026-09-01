@@ -202,6 +202,23 @@ export function useAssistantChat({
     updateLatestAssistantMessage((message) => ({ ...message, events: snapshot }));
   };
 
+  // Terminal-state sweep: strips isStreaming from every remaining event and
+  // drops streaming placeholders so no PreResponseWrapper stays stuck on
+  // "Working" after the stream ends (normally, on error, or on abort).
+  const finalizeAllStreaming = () => {
+    finalizeStreamingContent();
+    finalizeStreamingReasoning();
+    const before = eventsRef.current;
+    const after = cancelStreamingEvents(before);
+    if (after === before) return;
+    eventsRef.current = after;
+    const snapshot = [...after];
+    updateLatestAssistantMessage((message) => ({
+      ...message,
+      events: cancelStreamingEvents(message.events ?? snapshot),
+    }));
+  };
+
   const pushThinkingPlaceholder = () => {
     const events = eventsRef.current;
     const last = events[events.length - 1];
@@ -1189,7 +1206,7 @@ export function useAssistantChat({
         }
       }
 
-      finalizeStreamingReasoning();
+      finalizeAllStreaming();
       setIsResponseLoading(false);
       setIsLoadingCitations(false);
 
@@ -1226,8 +1243,7 @@ export function useAssistantChat({
       return streamedChatId || null;
     } catch (error: unknown) {
       if (error instanceof Error && error.name === "AbortError") {
-        finalizeStreamingContent();
-        finalizeStreamingReasoning();
+        finalizeAllStreaming();
         eventsRef.current = appendCancellationEvent(eventsRef.current);
         setMessages((prev) => {
           const assistantIndex = [...prev]
@@ -1258,7 +1274,7 @@ export function useAssistantChat({
           ];
         });
       } else {
-        finalizeStreamingContent();
+        finalizeAllStreaming();
         const errorMessage =
           error instanceof Error && error.message
             ? error.message
