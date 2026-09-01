@@ -592,6 +592,41 @@ export function safeGeneratedFilename(title: string, extension: string) {
   return `${safeTitle}.${extension}`;
 }
 
+// Generic titles the model falls back to when it forgets to name the
+// artifact — these produced meaningless "Workbook.xlsx" duplicates in the
+// project sidebar (QA COR-05).
+const GENERIC_TITLES = new Set([
+  "workbook",
+  "document",
+  "spreadsheet",
+  "excel",
+  "file",
+  "output",
+  "result",
+  "planilha",
+  "documento",
+  "arquivo",
+]);
+
+export function semanticGeneratedTitle(
+  title: unknown,
+  sheets: unknown[],
+  fallback = "Documento Gerado",
+): string {
+  const raw = typeof title === "string" ? title.trim() : "";
+  if (raw && !GENERIC_TITLES.has(raw.toLowerCase())) return raw;
+  // Derive a semantic name from the first sheet's name, when available.
+  const firstSheet = Array.isArray(sheets) ? sheets[0] : null;
+  const sheetName =
+    firstSheet && typeof firstSheet === "object"
+      ? String(
+          (firstSheet as { name?: unknown }).name ?? "",
+        ).trim()
+      : "";
+  if (sheetName) return sheetName.slice(0, 64);
+  return fallback;
+}
+
 function xmlEscape(value: unknown) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1036,7 +1071,7 @@ export async function generateExcel(
   options?: { projectId?: string | null },
 ) {
   try {
-    const normalizedTitle = typeof title === "string" ? title : "Workbook";
+    const normalizedTitle = semanticGeneratedTitle(title, sheets);
     const buffer = await buildXlsxWorkbook(
       normalizedTitle,
       Array.isArray(sheets) ? sheets : [],

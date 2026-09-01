@@ -38,7 +38,7 @@ import {
     ensureReviewAccess,
     filterAccessibleDocumentIds,
 } from "../lib/access";
-import { safeErrorLog, safeErrorMessage } from "../lib/safeError";
+import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeError";
 import {
     findMissingUserEmails,
     loadProfileUsersByEmail,
@@ -1006,7 +1006,7 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
         console.error("[tabular/generate] stream error", safeErrorLog(err));
         try {
             write(
-                `data: ${JSON.stringify({ type: "error", message: safeErrorMessage(err, "Stream error") })}\n\ndata: [DONE]\n\n`,
+                `data: ${JSON.stringify({ type: "error", message: userFacingLlmError(err, "Stream error") })}\n\ndata: [DONE]\n\n`,
             );
         } catch {
             /* ignore */
@@ -1460,7 +1460,7 @@ tabularRouter.post("/:reviewId/chat", requireAuth, async (req, res) => {
             return;
         }
         console.error("[tabular/chat] error", safeErrorLog(err));
-        const message = safeErrorMessage(err, "Stream error");
+        const message = userFacingLlmError(err, "Stream error");
         const errorEvents = err instanceof AssistantStreamError
             ? stripTransientAssistantEvents(err.events)
             : [{ type: "error" as const, message }];
