@@ -1560,6 +1560,27 @@ export async function readDocumentContent(
       devLog(
         `[read_document] docx extractDocxBodyText length=${text.length} for filename="${docInfo.filename}"`,
       );
+      // Append Word balloon comments (word/comments.xml) — clients often
+      // put their negotiating position in comments, not in the body text.
+      try {
+        const { extractDocxWithComments } = await import("../../docxComments");
+        const { text: withComments, commentCount } =
+          await extractDocxWithComments(Buffer.from(raw));
+        if (commentCount > 0 && withComments.includes("## Comments")) {
+          const commentsBlock = withComments.slice(
+            withComments.indexOf("## Comments"),
+          );
+          text = `${text}\n\n---\n\n${commentsBlock}`;
+          devLog(
+            `[read_document] docx appended ${commentCount} comments for filename="${docInfo.filename}"`,
+          );
+        }
+      } catch (err) {
+        devLog(
+          `[read_document] docx comment extraction failed for filename="${docInfo.filename}":`,
+          err,
+        );
+      }
       if (!text) {
         devLog(
           `[read_document] docx accepted-view extractor returned empty, falling back to mammoth for filename="${docInfo.filename}"`,
