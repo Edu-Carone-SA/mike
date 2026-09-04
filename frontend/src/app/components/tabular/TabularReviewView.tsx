@@ -309,10 +309,21 @@ export function TRView({ reviewId, projectId }: Props) {
     }
 
     async function handleGenerate() {
-        if (!review || generating) return;
-
-        // If columns changed since last save, update the review first
-        if (columns.length === 0) return;
+        // QA TAB-002: every early exit must be visible to the user — a
+        // silent return made Run look like a no-op with zero feedback.
+        if (!review) {
+            setGenerationError("Review not loaded yet. Try again in a moment.");
+            return;
+        }
+        if (generating) return;
+        if (columns.length === 0) {
+            setGenerationError("Add at least one column before running.");
+            return;
+        }
+        if (documents.length === 0) {
+            setGenerationError("Add at least one document before running.");
+            return;
+        }
 
         setGenerationError(null);
 

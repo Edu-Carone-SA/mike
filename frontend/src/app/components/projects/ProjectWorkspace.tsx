@@ -287,11 +287,14 @@ export function ProjectWorkspaceProvider({
     ) {
         setCreatingReview(true);
         try {
-            const readyDocs =
-                project?.documents?.filter((d) => d.status === "ready") ?? [];
+            // QA TAB-001: never silently fall back to ALL project documents
+            // when the modal's explicit selection is empty — that caused a
+            // review to be created against the wrong (scanned) document.
+            // An empty selection must create a review with no documents;
+            // the user can add them in the review view.
             const review = await createTabularReview({
                 title: title || undefined,
-                document_ids: documentIds ?? readyDocs.map((d) => d.id),
+                document_ids: documentIds ?? [],
                 columns_config: columnsConfig ?? [],
                 project_id: projectId,
             });

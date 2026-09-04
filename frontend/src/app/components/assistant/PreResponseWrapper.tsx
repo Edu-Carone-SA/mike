@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 
 export function PreResponseWrapper({
     children,
+    terminalState,
     stepCount,
     shouldMinimize,
     isStreaming,
@@ -12,6 +13,8 @@ export function PreResponseWrapper({
     forceOpen = false,
 }: {
     children: React.ReactNode;
+    /** Terminal state of this group's run: derived from its events. */
+    terminalState?: "completed" | "failed" | "cancelled";
     stepCount: number;
     shouldMinimize: boolean;
     isStreaming: boolean;
@@ -39,9 +42,16 @@ export function PreResponseWrapper({
     }, [forceOpen, shouldMinimize, userToggled]);
 
     const stepWord = `step${stepCount === 1 ? "" : "s"}`;
+    // QA UX-STATE-01 (Onda 3): the label must reflect the terminal state of
+    // the run, not just that streaming ended. A run that ends in an error or
+    // cancellation is 'Failed'/'Cancelled', never 'Completed'.
     const label = isStreaming
         ? "Working"
-        : `Completed in ${stepCount} ${stepWord}`;
+        : terminalState === "cancelled"
+          ? `Cancelled after ${stepCount} ${stepWord}`
+          : terminalState === "failed"
+            ? `Failed after ${stepCount} ${stepWord}`
+            : `Completed in ${stepCount} ${stepWord}`;
 
     const buttonTextClass = compact ? "text-xs" : "text-sm";
     const childrenGapClass = compact ? "gap-2.5" : "gap-4";

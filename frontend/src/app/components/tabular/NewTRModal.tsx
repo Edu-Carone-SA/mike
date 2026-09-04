@@ -228,7 +228,10 @@ export function NewTRModal({
                 (d) => d.status === "ready",
             );
             setProjectDocs(docs);
-            setSelectedDocIds(new Set(docs.map((d) => d.id)));
+            // QA TAB-001: do NOT auto-select every project document. The user
+            // must explicitly choose which documents the review targets;
+            // auto-select-all caused reviews bound to the wrong document.
+            setSelectedDocIds(new Set());
         } finally {
             setLoadingDocs(false);
         }

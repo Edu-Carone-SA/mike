@@ -199,6 +199,13 @@ export async function runLLMStream(params: {
   const rawMsgs = apiMessages as { role: string; content: string | null }[];
   const systemPrompt =
     rawMsgs[0]?.role === "system" ? (rawMsgs[0].content ?? "") : "";
+  // QA I18 (Onda 3): user messages are predominantly PT-BR and users
+  // explicitly request Portuguese; intermediate tool narrations were
+  // leaking English ("Let me read the rest of the document...").
+  // Force PT-BR for ALL assistant output, including progress narration
+  // emitted between tool calls.
+  const i18Suffix =
+    "\n\nIDIOMA: Responda SEMPRE em português do Brasil, incluindo mensagens intermediárias de progresso entre chamadas de ferramentas. Nunca produza texto em inglês, mesmo ao explicar etapas de leitura ou busca documental.";
   const chatMessages: LlmMessage[] = rawMsgs
     .filter((m) => m.role !== "system")
     .map((m) => ({
@@ -340,7 +347,7 @@ export async function runLLMStream(params: {
     throwIfAborted(signal);
     await streamChatWithTools({
       model: selectedModel,
-      systemPrompt,
+      systemPrompt: systemPrompt + i18Suffix,
       messages: chatMessages,
       tools: activeTools as OpenAIToolSchema[],
       maxIterations: 10,
