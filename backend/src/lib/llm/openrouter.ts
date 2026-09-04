@@ -412,6 +412,7 @@ export async function streamOpenRouter(
     enableThinking,
   } = params;
   const maxIter = params.maxIterations ?? 10;
+  let exhaustedToolLoop = false;
   const key = apiKey(apiKeys?.openrouter);
   const chatTools = toChatTools(tools);
   let fullText = "";
@@ -591,6 +592,11 @@ export async function streamOpenRouter(
       const results: NormalizedToolResult[] = await runTools(toolCalls);
       throwIfAborted(params.abortSignal);
 
+      // QA R4-UX-STATE-01: if this was the last allowed iteration and the
+      // model still ended with tool calls (no final message), the loop is
+      // exhausted — flag it so the streaming layer emits a terminal error.
+      if (iter === maxIter - 1) exhaustedToolLoop = true;
+
       for (const result of results) {
         messages.push({
           role: "tool",
@@ -601,7 +607,7 @@ export async function streamOpenRouter(
     }
 
     await rawStreamRecorder?.flush("completed");
-    return { fullText };
+    return { fullText, exhaustedToolLoop };
   } catch (error) {
     await rawStreamRecorder?.flush("error", error);
     throw error;
