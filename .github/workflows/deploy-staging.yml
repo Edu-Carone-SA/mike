@@ -280,10 +280,6 @@ jobs:
                   "awslogs-stream-prefix": "ecs"
                 }
               },
-              "environment": [
-                {"name": "COMMIT_SHA", "value": "${COMMIT_SHA}"},
-                {"name": "GITHUB_RUN_ID", "value": "${RUN_ID}"}
-              ],
               "secrets": [
                 {"name": "SUPABASE_URL", "valueFrom": "${SECRET_ARN}:SUPABASE_URL::"},
                 {"name": "SUPABASE_SECRET_KEY", "valueFrom": "${SECRET_ARN}:SUPABASE_SECRET_KEY::"},
@@ -297,7 +293,9 @@ jobs:
               "environment": [
                 {"name": "NODE_ENV", "value": "production"},
                 {"name": "PORT", "value": "3001"},
-                {"name": "FRONTEND_URL", "value": "${STAGING_URL}"}
+                {"name": "FRONTEND_URL", "value": "${STAGING_URL}"},
+                {"name": "COMMIT_SHA", "value": "${COMMIT_SHA}"},
+                {"name": "GITHUB_RUN_ID", "value": "${RUN_ID}"}
               ],
               "healthCheck": {
                 "command": ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"],
