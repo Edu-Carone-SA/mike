@@ -280,6 +280,10 @@ jobs:
                   "awslogs-stream-prefix": "ecs"
                 }
               },
+              "environment": [
+                {"name": "COMMIT_SHA", "value": "${GITHUB_SHA}"},
+                {"name": "GITHUB_RUN_ID", "value": "${GITHUB_RUN_ID}"}
+              ],
               "secrets": [
                 {"name": "SUPABASE_URL", "valueFrom": "${SECRET_ARN}:SUPABASE_URL::"},
                 {"name": "SUPABASE_SECRET_KEY", "valueFrom": "${SECRET_ARN}:SUPABASE_SECRET_KEY::"},

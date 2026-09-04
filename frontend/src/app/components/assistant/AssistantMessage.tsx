@@ -772,6 +772,17 @@ export function AssistantMessage({
                                         "isStreaming" in event &&
                                         !!event.isStreaming,
                                 ) || pendingAskInput;
+                            // QA UX-STATE-01: derive the wrapper label from
+                            // the terminal event of the group, if any.
+                            const terminalState = g.events.some(
+                                (event) => event.type === "cancelled",
+                            )
+                                ? "cancelled" as const
+                                : g.events.some(
+                                        (event) => event.type === "error",
+                                    )
+                                  ? "failed" as const
+                                  : "completed" as const;
                             return (
                                 <PreResponseWrapper
                                     key={`p-${g.indices[0]}`}
@@ -783,6 +794,7 @@ export function AssistantMessage({
                                     }
                                     isStreaming={wrapperIsStreaming}
                                     forceOpen={pendingAskInput}
+                                    terminalState={terminalState}
                                 >
                                     {g.events.map((event, i) =>
                                         renderEvent(
