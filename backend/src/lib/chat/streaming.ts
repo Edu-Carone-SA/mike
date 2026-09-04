@@ -45,6 +45,7 @@ import {
 
 export type AssistantEvent =
   | { type: "reasoning"; text: string }
+  | { type: "cancelled"; reason: string; at: string }
   | AskInputsEvent
   | {
       type: "ask_inputs_response";
@@ -532,10 +533,14 @@ export async function runLLMStream(params: {
 
   flushText();
 
-  // QA P0: if after the tool loop we have no content and no events, emit
-  // an explicit terminal error so the UI never shows "Completed" with an
-  // empty response (PERF-004, WF-001, CHAT-003).
-  if (!fullText && events.length === 0) {
+  // QA P0 (R2 retest): if after the tool loop we have no content — even
+  // when tool events exist (35 tool steps but no final answer, chat
+  // 0e29c24d) — emit an explicit terminal error so the UI never shows
+  // "Completed" with no usable response (PERF-004, WF-001, CHAT-003).
+  // A run that only performed tool calls (reads/searches) but produced no
+  // assistant prose is a failure, not a success.
+  const contentEvents = events.filter((e) => e.type === "content");
+  if (!fullText && contentEvents.length === 0) {
     write(`data: ${JSON.stringify({ type: "error", message: "Análise interrompida: o documento é muito longo ou a tarefa exige mais etapas do que o limite atual. Tente reduzir o escopo ou dividir em partes." })}\n\n`);
     write("data: [DONE]\n\n");
     return { fullText: "", events: [{ type: "error", message: "Análise interrompida" } as any], citations: [] };

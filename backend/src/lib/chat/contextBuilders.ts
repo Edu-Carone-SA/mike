@@ -325,7 +325,17 @@ export async function appendAssistantEventsToLastAssistantMessage(
 }
 
 export function appendCancelledAssistantEvent(events: AssistantEvent[]) {
-  return [...events, { type: "content" as const, text: "Cancelled by user." }];
+  // QA R2-JOB-001: explicit terminal state — a typed "cancelled" event
+  // (rendered as a red "Cancelled by user" block) instead of prose content,
+  // so a cancelled task can never be mistaken for a completed one.
+  return [
+    ...events,
+    {
+      type: "cancelled" as const,
+      reason: "user_cancelled",
+      at: new Date().toISOString(),
+    },
+  ];
 }
 
 export function buildCancelledAssistantMessage(args: {
