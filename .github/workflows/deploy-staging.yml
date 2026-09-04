@@ -281,8 +281,8 @@ jobs:
                 }
               },
               "environment": [
-                {"name": "COMMIT_SHA", "value": "${GITHUB_SHA}"},
-                {"name": "GITHUB_RUN_ID", "value": "${GITHUB_RUN_ID}"}
+                {"name": "COMMIT_SHA", "value": "${COMMIT_SHA}"},
+                {"name": "GITHUB_RUN_ID", "value": "${RUN_ID}"}
               ],
               "secrets": [
                 {"name": "SUPABASE_URL", "valueFrom": "${SECRET_ARN}:SUPABASE_URL::"},
@@ -321,8 +321,8 @@ jobs:
           sed -i "s|\${TAG}|${{ needs.build.outputs.tag }}|g" /tmp/backend-td.json
           sed -i "s|\${SECRET_ARN}|${SECRET_ARN}|g" /tmp/backend-td.json
           sed -i "s|\${STAGING_URL}|${STAGING_URL}|g" /tmp/backend-td.json
-          sed -i "s|\${GITHUB_SHA}|${GITHUB_SHA}|g" /tmp/backend-td.json
-          sed -i "s|\${GITHUB_RUN_ID}|${GITHUB_RUN_ID}|g" /tmp/backend-td.json
+          sed -i "s|\${COMMIT_SHA}|${{ github.sha }}|g" /tmp/backend-td.json
+          sed -i "s|\${RUN_ID}|${{ github.run_id }}|g" /tmp/backend-td.json
 
           REV=$(aws ecs register-task-definition --cli-input-json file:///tmp/backend-td.json --query 'taskDefinition.revision' --output text)
           echo "revision=$REV" >> $GITHUB_OUTPUT
