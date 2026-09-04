@@ -257,17 +257,25 @@ tabularRouter.get("/:reviewId", requireAuth, async (req, res) => {
     const userEmail = res.locals.userEmail as string | undefined;
     const { reviewId } = req.params;
     const db = createServerSupabase();
+    // QA TAB-002: every run must be observable and terminal. If the client
+    // fires Run and this handler exits early (auth, access, missing docs),
+    // log the reason so CloudWatch can correlate UI clicks to backend exits.
+    console.log("[tabular/generate] run_started", { reviewId, userId });
 
     const { data: review, error } = await db
         .from("tabular_reviews")
         .select("*")
         .eq("id", reviewId)
         .single();
-    if (error || !review)
+    if (error || !review) {
+        console.log("[tabular/generate] run_failed", { reviewId, reason: "review_not_found" });
         return void res.status(404).json({ detail: "Review not found" });
+    }
     const access = await ensureReviewAccess(review, userId, userEmail, db);
-    if (!access.ok)
+    if (!access.ok) {
+        console.log("[tabular/generate] run_failed", { reviewId, reason: "access_denied" });
         return void res.status(404).json({ detail: "Review not found" });
+    }
 
     const { data: cells } = await db
         .from("tabular_cells")

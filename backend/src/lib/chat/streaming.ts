@@ -343,9 +343,10 @@ export async function runLLMStream(params: {
 
   const selectedModel = resolveModel(model, DEFAULT_MAIN_MODEL);
 
+  let streamResult: Awaited<ReturnType<typeof streamChatWithTools>> | null = null;
   try {
     throwIfAborted(signal);
-    await streamChatWithTools({
+    streamResult = await streamChatWithTools({
       model: selectedModel,
       systemPrompt: systemPrompt + i18Suffix,
       messages: chatMessages,
@@ -540,14 +541,15 @@ export async function runLLMStream(params: {
 
   flushText();
 
-  // QA P0 (R2 retest): if after the tool loop we have no content — even
-  // when tool events exist (35 tool steps but no final answer, chat
-  // 0e29c24d) — emit an explicit terminal error so the UI never shows
-  // "Completed" with no usable response (PERF-004, WF-001, CHAT-003).
-  // A run that only performed tool calls (reads/searches) but produced no
-  // assistant prose is a failure, not a success.
+  // QA R4-UX-STATE-01: the previous guard (!fullText && no content events)
+  // never fired when the model emitted intermediate PT narration ("vou
+  // buscar as partes restantes...") between tool calls — that counts as
+  // content, so a 33-step search-only run still rendered as "Completed".
+  // The adapter now flags exhaustedToolLoop when the loop ends after tool
+  // calls without a final assistant message; that flag is the source of
+  // truth. Keep the empty-content check as a secondary safety net.
   const contentEvents = events.filter((e) => e.type === "content");
-  if (!fullText && contentEvents.length === 0) {
+  if (streamResult?.exhaustedToolLoop || (!fullText && contentEvents.length === 0)) {
     write(`data: ${JSON.stringify({ type: "error", message: "Análise interrompida: o documento é muito longo ou a tarefa exige mais etapas do que o limite atual. Tente reduzir o escopo ou dividir em partes." })}\n\n`);
     write("data: [DONE]\n\n");
     return { fullText: "", events: [{ type: "error", message: "Análise interrompida" } as any], citations: [] };

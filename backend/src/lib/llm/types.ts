@@ -66,4 +66,7 @@ export type StreamChatParams = {
 
 export type StreamChatResult = {
     fullText: string;
+    /** True when the tool loop hit maxIterations without a final
+     * assistant message — the run must be treated as a failure. */
+    exhaustedToolLoop?: boolean;
 };
