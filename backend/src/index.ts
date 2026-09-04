@@ -170,16 +170,22 @@ app.use("/search", searchRouter);
 
 const VERSION = process.env.npm_package_version ?? "local";
 const COMMIT_SHA = process.env.COMMIT_SHA ?? "unknown";
+const DEPLOY_RUN = process.env.GITHUB_RUN_ID ?? "unknown";
 
-app.get("/health", (_req, res) =>
+app.get("/health", (_req, res) => {
+  // QA R4 observability: expose the served commit both in the body and as
+  // a response header so builds can be verified without parsing JSON.
+  res.setHeader("X-Commit-SHA", COMMIT_SHA);
+  res.setHeader("X-Deploy-Run", DEPLOY_RUN);
   res.status(200).json({
     status: "ok",
     service: "mike-backend",
     version: VERSION,
     commit: COMMIT_SHA,
+    deploy_run: DEPLOY_RUN,
     timestamp: new Date().toISOString(),
-  }),
-);
+  });
+});
 
 app.get("/ready", async (_req, res) => {
   const [supabase, storage] = await Promise.all([
