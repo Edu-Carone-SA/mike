@@ -54,8 +54,15 @@ type ChatStreamChoice = {
   finish_reason?: string | null;
 };
 
+type ChatStreamUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
 type ChatStreamEvent = {
   choices?: ChatStreamChoice[];
+  usage?: ChatStreamUsage;
 };
 
 type ChatCompletionResponse = {
@@ -65,6 +72,7 @@ type ChatCompletionResponse = {
       tool_calls?: ChatToolCall[];
     };
   }[];
+  usage?: ChatStreamUsage;
 };
 
 function apiKey(override?: string | null): string {
@@ -239,6 +247,38 @@ export class DsmlContentFilter {
   }
 }
 
+/**
+ * Structured LLM call telemetry for CloudWatch (QA observability request):
+ * one line per upstream call with model, status, latency, attempt, fallback
+ * and — when the provider reports it — token usage. Field order is stable so
+ * Logs Insights queries can filter on `model=` / `status=` / `fallback=`.
+ */
+function logLlmCall(fields: {
+  model: string;
+  status: number | "error";
+  durationMs: number;
+  attempt: number;
+  fallback: boolean;
+  promptTokens?: number;
+  completionTokens?: number;
+  contextTokens?: number;
+}) {
+  const parts = [
+    `[llm] model=${fields.model}`,
+    `status=${fields.status}`,
+    `duration_ms=${fields.durationMs}`,
+    `attempt=${fields.attempt}`,
+    `fallback=${fields.fallback}`,
+  ];
+  if (fields.promptTokens !== undefined)
+    parts.push(`prompt_tokens=${fields.promptTokens}`);
+  if (fields.completionTokens !== undefined)
+    parts.push(`completion_tokens=${fields.completionTokens}`);
+  if (fields.contextTokens !== undefined)
+    parts.push(`context_tokens=${fields.contextTokens}`);
+  console.log(parts.join(" "));
+}
+
 async function createChatCompletion(params: {
   model: string;
   messages: ChatMessage[];
@@ -259,6 +299,10 @@ async function createChatCompletion(params: {
   if (params.tools?.length) {
     body.tools = params.tools;
   }
+
+  // Ask OpenRouter to report token usage in stream chunks / responses so
+  // telemetry can log prompt/completion/context tokens per call.
+  body.stream_options = { include_usage: true };
 
   if (params.enableThinking) {
     body.reasoning = { effort: "medium" };
@@ -293,8 +337,17 @@ async function createChatCompletion(params: {
     (m): m is string => !!m,
   )) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const isFallbackModel = modelId !== params.model;
+      const startedAt = Date.now();
       try {
         const response = await requestOnce(modelId);
+        logLlmCall({
+          model: modelId,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          attempt,
+          fallback: isFallbackModel,
+        });
 
         if (response.ok) return response;
 
@@ -330,6 +383,13 @@ async function createChatCompletion(params: {
           lastError = err instanceof Error ? err : new Error(String(err));
           break;
         }
+        logLlmCall({
+          model: modelId,
+          status: "error",
+          durationMs: Date.now() - startedAt,
+          attempt,
+          fallback: isFallbackModel,
+        });
         lastError = err as Error;
         await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
       }
@@ -385,6 +445,7 @@ export async function streamOpenRouter(
       let buffer = "";
       let sawReasoning = false;
       let finishReason: string | null = null;
+      let streamUsage: ChatStreamUsage | null = null;
       // Suppresses leaked DSML tool-call markup from the content channel.
       const dsmlFilter = new DsmlContentFilter();
 
@@ -423,6 +484,11 @@ export async function streamOpenRouter(
             label: "sse_event",
             payload: event,
           });
+
+          // include_usage sends a final chunk with usage and empty choices
+          if (event.usage) {
+            streamUsage = event.usage;
+          }
 
           const choice = event.choices?.[0];
           if (!choice?.delta) continue;
@@ -465,6 +531,19 @@ export async function streamOpenRouter(
 
       if (sawReasoning) callbacks.onReasoningBlockEnd?.();
       throwIfAborted(params.abortSignal);
+
+      if (streamUsage) {
+        logLlmCall({
+          model,
+          status: 200,
+          durationMs: -1, // per-iteration usage report, not a request timing
+          attempt: iter + 1,
+          fallback: false,
+          promptTokens: streamUsage.prompt_tokens,
+          completionTokens: streamUsage.completion_tokens,
+          contextTokens: streamUsage.total_tokens,
+        });
+      }
 
       const leftover = dsmlFilter.flush();
       if (leftover) {
@@ -550,6 +629,18 @@ export async function completeOpenRouterText(params: {
   });
 
   const json = (await response.json()) as ChatCompletionResponse;
+  if (json.usage) {
+    logLlmCall({
+      model: params.model,
+      status: 200,
+      durationMs: -1,
+      attempt: 1,
+      fallback: false,
+      promptTokens: json.usage.prompt_tokens,
+      completionTokens: json.usage.completion_tokens,
+      contextTokens: json.usage.total_tokens,
+    });
+  }
   return json.choices?.[0]?.message?.content ?? "";
 }
 
