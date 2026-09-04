@@ -91,6 +91,7 @@ export interface EditAnnotation {
 export type AssistantEvent =
   | { type: "reasoning"; text: string; isStreaming?: boolean }
   | { type: "error"; message: string }
+  | { type: "cancelled"; reason: string; at: string }
   | {
       type: "tool_call_start";
       name: string;

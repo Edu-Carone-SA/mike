@@ -355,6 +355,14 @@ export function AssistantMessage({
         const showConnector =
             nextEvent !== undefined && nextEvent.type !== "content";
 
+        if (event.type === "cancelled") {
+            return (
+                <EventBlock key={globalIdx} showConnector={showConnector} dotColor="red">
+                    <span className="font-medium text-red-600">Cancelled by user</span>
+                    {event.at && <span className="ml-2 text-xs text-gray-500">{new Date(event.at).toLocaleTimeString()}</span>}
+                </EventBlock>
+            );
+        }
         if (event.type === "reasoning") {
             return (
                 <ReasoningBlock
