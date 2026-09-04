@@ -532,6 +532,15 @@ export async function runLLMStream(params: {
 
   flushText();
 
+  // QA P0: if after the tool loop we have no content and no events, emit
+  // an explicit terminal error so the UI never shows "Completed" with an
+  // empty response (PERF-004, WF-001, CHAT-003).
+  if (!fullText && events.length === 0) {
+    write(`data: ${JSON.stringify({ type: "error", message: "Análise interrompida: o documento é muito longo ou a tarefa exige mais etapas do que o limite atual. Tente reduzir o escopo ou dividir em partes." })}\n\n`);
+    write("data: [DONE]\n\n");
+    return { fullText: "", events: [{ type: "error", message: "Análise interrompida" } as any], citations: [] };
+  }
+
   // Parse and emit citations from <CITATIONS> block
   const { citations: parsedCitations, diagnostics: citationDiagnostics } =
     parseCitationsWithDiagnostics(fullText);

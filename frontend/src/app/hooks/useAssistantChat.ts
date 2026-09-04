@@ -183,10 +183,13 @@ export function useAssistantChat({
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       const snapshot = cancelStreamingEvents(eventsRef.current);
-      eventsRef.current = snapshot;
+      // QA P0 (JOB-001): emit an explicit "cancelled" event so the UI
+      // shows "Cancelled by user" instead of "Completed in N steps".
+      const cancelledEvent = { type: "cancelled" as const, reason: "user_cancelled", at: new Date().toISOString() };
+      eventsRef.current = [...snapshot, cancelledEvent];
       updateLatestAssistantMessage((message) => ({
         ...message,
-        events: cancelStreamingEvents(message.events ?? snapshot),
+        events: [...cancelStreamingEvents(message.events ?? snapshot), cancelledEvent],
       }));
       setIsResponseLoading(false);
       setIsLoadingCitations(false);

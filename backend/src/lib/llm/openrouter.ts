@@ -608,6 +608,16 @@ export async function streamOpenRouter(
   }
 }
 
+/**
+ * Called by the streaming layer when the tool loop reached maxIterations
+ * without emitting a final assistant message or artifact. This prevents
+ * the UI from receiving a silent "completed" state (QA P0s PERF-004, WF-001).
+ */
+export function handleMaxToolIterations(write: (s: string) => void) {
+  write(`data: ${JSON.stringify({ type: "error", message: "Análise interrompida: o documento é muito longo ou a tarefa exige mais etapas do que o limite atual. Tente reduzir o escopo ou dividir em partes." })}\n\n`);
+  write("data: [DONE]\n\n");
+}
+
 export async function completeOpenRouterText(params: {
   model: string;
   systemPrompt?: string;
