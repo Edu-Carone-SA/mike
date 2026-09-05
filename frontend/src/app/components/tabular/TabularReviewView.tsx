@@ -348,15 +348,30 @@ export function TRView({ reviewId, projectId }: Props) {
         // Only block on API key if profile has loaded (apiKeys is non-null).
         // If profile hasn't loaded yet, let the backend validate — it returns
         // 422 with a structured error that we handle below.
+        console.info("[tabular-run] after precondition banners", {
+            apiKeysLoaded: !!apiKeys,
+            keys: apiKeys
+                ? Object.fromEntries(
+                      Object.entries(apiKeys).map(([k, v]) => [
+                          k,
+                          (v as { configured?: boolean })?.configured,
+                      ]),
+                  )
+                : null,
+            model: tabularModel,
+        });
         if (apiKeys && !isModelAvailable(tabularModel, apiKeys)) {
+            console.info("[tabular-run] blocked: model unavailable — opening API key modal");
             setApiKeyModalProvider(getModelProvider(tabularModel));
             return;
         }
 
         setGenerating(true);
+        console.info("[tabular-run] preconditions ok — calling streamTabularGeneration…");
 
         try {
             const response = await streamTabularGeneration(reviewId);
+            console.info("[tabular-run] response received", { status: response.status });
             if (!response.ok) {
                 const payload = await response.json().catch(() => null);
                 const provider =
