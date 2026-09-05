@@ -33,6 +33,8 @@ type PageHeaderButtonAction = {
     variant?: "default" | "danger";
     iconOnly?: boolean;
     tooltip?: ReactNode;
+    /** Stable selector for E2E tests/QA (AC-TAB-01) */
+    testId?: string;
 };
 
 type PageHeaderSearchAction = {
@@ -97,6 +99,24 @@ export function PageHeader({
     loading = false,
 }: PageHeaderProps) {
     const { mobileActionsContainer } = usePageChrome();
+    // QA TAB-UI-003 (Onda 6 reclassificação): the header used to render BOTH
+    // a desktop copy (hidden by CSS) and a mobile-portal copy simultaneously,
+    // so the DOM held two "Run" buttons — one invisible. Automation (and
+    // assistive tech) could select the invisible one and silently lose the
+    // click. Render exactly ONE copy, chosen by viewport, responsive to
+    // resize. Initial render matches the CSS breakpoint so there is no flash.
+    const [isDesktopViewport, setIsDesktopViewport] = useState(
+        () =>
+            typeof window !== "undefined" &&
+            window.matchMedia("(min-width: 768px)").matches,
+    );
+    useEffect(() => {
+        const mql = window.matchMedia("(min-width: 768px)");
+        const onChange = (e: MediaQueryListEvent) => setIsDesktopViewport(e.matches);
+        mql.addEventListener("change", onChange);
+        setIsDesktopViewport(mql.matches);
+        return () => mql.removeEventListener("change", onChange);
+    }, []);
     const headerContent = breadcrumbs?.length ? (
         <PageHeaderBreadcrumbs items={breadcrumbs} />
     ) : (
@@ -124,7 +144,7 @@ export function PageHeader({
             )}
         >
             {headerContent}
-            {hasActions && (
+            {hasActions && isDesktopViewport && (
                 <div className="ml-4 hidden shrink-0 items-center gap-3 md:flex">
                     <PageHeaderActionGroups
                         groupedActionItems={groupedActionItems}
@@ -133,6 +153,7 @@ export function PageHeader({
                 </div>
             )}
             {hasActions &&
+                !isDesktopViewport &&
                 mobileActionsContainer &&
                 createPortal(
                     <div className="flex min-w-0 items-center justify-end gap-3 overflow-visible py-2 -my-2">
@@ -275,6 +296,7 @@ function PageHeaderButtonActionControl({
                 aria-label={action.title}
                 variant={action.variant}
                 iconOnly={iconOnly}
+                data-testid={action.testId}
             >
                 {action.icon}
                 {action.label}
