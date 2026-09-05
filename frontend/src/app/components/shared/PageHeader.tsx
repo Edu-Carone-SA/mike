@@ -114,7 +114,6 @@ export function PageHeader({
         const mql = window.matchMedia("(min-width: 768px)");
         const onChange = (e: MediaQueryListEvent) => setIsDesktopViewport(e.matches);
         mql.addEventListener("change", onChange);
-        setIsDesktopViewport(mql.matches);
         return () => mql.removeEventListener("change", onChange);
     }, []);
     const headerContent = breadcrumbs?.length ? (
