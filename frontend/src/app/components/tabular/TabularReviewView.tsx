@@ -258,8 +258,11 @@ export function TRView({ reviewId, projectId }: Props) {
     }
 
     async function handleRegenerateCell(docId: string, colIndex: number) {
-        if (apiKeys && !isModelAvailable(tabularModel, apiKeys)) {
-            setApiKeyModalProvider(getModelProvider(tabularModel));
+        // Same TAB-002 root-cause guard as handleGenerate: unknown provider
+        // must not silently no-op the regenerate click.
+        const provider = getModelProvider(tabularModel);
+        if (apiKeys && provider && !isModelAvailable(tabularModel, apiKeys)) {
+            setApiKeyModalProvider(provider);
             return;
         }
 
@@ -348,21 +351,17 @@ export function TRView({ reviewId, projectId }: Props) {
         // Only block on API key if profile has loaded (apiKeys is non-null).
         // If profile hasn't loaded yet, let the backend validate — it returns
         // 422 with a structured error that we handle below.
-        console.info("[tabular-run] after precondition banners", {
-            apiKeysLoaded: !!apiKeys,
-            keys: apiKeys
-                ? Object.fromEntries(
-                      Object.entries(apiKeys).map(([k, v]) => [
-                          k,
-                          (v as { configured?: boolean })?.configured,
-                      ]),
-                  )
-                : null,
-            model: tabularModel,
-        });
-        if (apiKeys && !isModelAvailable(tabularModel, apiKeys)) {
-            console.info("[tabular-run] blocked: model unavailable — opening API key modal");
-            setApiKeyModalProvider(getModelProvider(tabularModel));
+        // QA TAB-002 (root cause, Onda 6): when the configured model is not
+        // in the frontend catalog, getModelProvider() returns null and the
+        // old code did setApiKeyModalProvider(null) — the popup never opened
+        // and the handler returned SILENTLY (no fetch, no banner, no modal).
+        // Now: only block when we can resolve the provider AND it is actually
+        // unconfigured; unknown models fall through to the backend, which
+        // returns a typed 422 the catch below surfaces to the user.
+        const provider = getModelProvider(tabularModel);
+        if (apiKeys && provider && !isModelAvailable(tabularModel, apiKeys)) {
+            console.info("[tabular-run] blocked: provider unconfigured — opening API key modal", { provider });
+            setApiKeyModalProvider(provider);
             return;
         }
 
@@ -868,6 +867,9 @@ export function TRView({ reviewId, projectId }: Props) {
                                     // AC-TAB-01: stable selector for QA/E2E —
                                     // exactly one visible Run button in the DOM
                                     testId: "run-button",
+                                    // The label is hidden below sm (icon-only there),
+                                    // so the icon-only copy needs an accessible name.
+                                    title: "Run",
                                     disabled:
                                         generating ||
                                         columns.length === 0 ||
