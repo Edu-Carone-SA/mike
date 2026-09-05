@@ -309,13 +309,31 @@ export function TRView({ reviewId, projectId }: Props) {
     }
 
     async function handleGenerate() {
+        // QA TAB-002 (Onda 5): the QA's instrumented click produced no
+        // fetch, no feedback, and no backend run_started — the click never
+        // reached this handler. Log entry + every exit so the browser
+        // console shows exactly where a Run click dies.
+        console.info("[tabular-run] handler invoked", {
+            reviewId: review?.id,
+            generating,
+            columns: columns.length,
+            documents: documents.length,
+        });
         // QA TAB-002: every early exit must be visible to the user — a
         // silent return made Run look like a no-op with zero feedback.
         if (!review) {
             setGenerationError("Review not loaded yet. Try again in a moment.");
             return;
         }
-        if (generating) return;
+        if (generating) {
+            // QA TAB-002 (Onda 5): a second Run click during an active
+            // generation was a SILENT no-op — the user saw no request, no
+            // feedback, nothing. Make the in-flight state explicit.
+            setGenerationError(
+                "Uma execução já está em andamento. Aguarde a conclusão antes de iniciar outra.",
+            );
+            return;
+        }
         if (columns.length === 0) {
             setGenerationError("Add at least one column before running.");
             return;

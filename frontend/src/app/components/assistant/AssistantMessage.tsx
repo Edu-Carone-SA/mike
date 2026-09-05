@@ -764,6 +764,12 @@ export function AssistantMessage({
                                     </div>
                                 );
                             }
+                            const messageFailed = events.some(
+                                (event) => event.type === "error",
+                            );
+                            const messageCancelled = events.some(
+                                (event) => event.type === "cancelled",
+                            );
                             const subsequentContent = hasContentAfter(gIdx);
                             const pendingAskInput = hasPendingAskInput(g);
                             const wrapperIsStreaming =
@@ -772,17 +778,27 @@ export function AssistantMessage({
                                         "isStreaming" in event &&
                                         !!event.isStreaming,
                                 ) || pendingAskInput;
-                            // QA UX-STATE-01: derive the wrapper label from
-                            // the terminal event of the group, if any.
-                            const terminalState = g.events.some(
-                                (event) => event.type === "cancelled",
-                            )
+                            // QA UX-STATE-01 (Onda 5): derive the wrapper label
+                            // from the terminal state of the WHOLE assistant
+                            // message, not just this group. When the run ends
+                            // in exhaustedToolLoop the backend appends an
+                            // error event in a separate group; the tool-step
+                            // groups would otherwise still read "Completed".
+                            const terminalState = messageCancelled
                                 ? "cancelled" as const
-                                : g.events.some(
-                                        (event) => event.type === "error",
-                                    )
+                                : messageFailed
                                   ? "failed" as const
-                                  : "completed" as const;
+                                  : g.events.some(
+                                            (event) =>
+                                                event.type === "cancelled",
+                                        )
+                                    ? "cancelled" as const
+                                    : g.events.some(
+                                              (event) =>
+                                                  event.type === "error",
+                                          )
+                                      ? "failed" as const
+                                      : "completed" as const;
                             return (
                                 <PreResponseWrapper
                                     key={`p-${g.indices[0]}`}
