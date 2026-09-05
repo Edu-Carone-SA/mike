@@ -850,6 +850,9 @@ export function TRView({ reviewId, projectId }: Props) {
                                 },
                                 {
                                     onClick: handleGenerate,
+                                    // AC-TAB-01: stable selector for QA/E2E —
+                                    // exactly one visible Run button in the DOM
+                                    testId: "run-button",
                                     disabled:
                                         generating ||
                                         columns.length === 0 ||
