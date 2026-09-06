@@ -1073,6 +1073,7 @@ export async function streamProjectChat(payload: {
     messages: StreamChatMessage[];
     chat_id?: string;
     model?: string;
+    resume_job_id?: string;
     displayed_doc?: { filename: string; document_id: string };
     attached_documents?: { filename: string; document_id: string }[];
     ask_inputs_response?: {

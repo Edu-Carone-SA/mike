@@ -424,6 +424,8 @@ export async function streamOpenRouter(
   try {
     let messages = toChatMessages(systemPrompt, params.messages);
 
+    let continuationsUsed = 0;
+    const MAX_CONTINUATIONS = 8;
     for (let iter = 0; iter < maxIter; iter++) {
       throwIfAborted(params.abortSignal);
       const response = await createChatCompletion({
@@ -558,7 +560,12 @@ export async function streamOpenRouter(
         // Auto-continue: if the response was cut off by max_tokens,
         // append the partial assistant message and ask the model to
         // continue. This prevents truncated/incomplete sentences.
-        if (finishReason === "length" && fullText) {
+        if (
+          finishReason === "length" &&
+          fullText &&
+          continuationsUsed < MAX_CONTINUATIONS
+        ) {
+          continuationsUsed++;
           messages = [
             ...messages,
             { role: "assistant" as const, content: fullText },
@@ -566,7 +573,11 @@ export async function streamOpenRouter(
           ];
           // Reset for next iteration — don't duplicate the text we
           // already streamed. We keep fullText as-is since new deltas
-          // will append to it.
+          // will append to it. This is a continuation of the SAME model
+          // turn, so it must not consume tool budget (QA JOB-02: output
+          // cap during a long artifact burned iterations until the loop
+          // exhausted and re-generated the same XLSX five times).
+          iter--;
           continue;
         }
         break;
