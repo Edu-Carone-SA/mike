@@ -183,6 +183,20 @@ export async function createDocumentJob(
     return { job: existing as DocumentJobRow, created: false };
 }
 
+export async function getDocumentJobByIdempotencyKey(
+    db: Db,
+    userId: string,
+    idempotencyKey: string,
+): Promise<DocumentJobRow | null> {
+    const { data } = await db
+        .from("document_jobs")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+    return (data as DocumentJobRow) ?? null;
+}
+
 export async function getDocumentJob(
     db: Db,
     jobId: string,
