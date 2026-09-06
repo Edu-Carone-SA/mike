@@ -208,19 +208,10 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         api_keys: apiKeys,
         legal_research_us: legalResearchUs,
     } = await getUserModelSettings(userId, db);
-    const apiMessages = buildMessages(
-        messagesForLLM,
-        docAvailability,
-        systemPromptExtra,
-        undefined,
-        legalResearchUs,
-    );
-
-    const workflowStore = await buildWorkflowStore(userId, userEmail, db);
-
     // Sprint 1 orchestration (QA JOB-02): deterministic plan before any
     // tool fires — one section per attached document plus a mandatory
-    // final synthesis section.
+    // final synthesis section. Injected into the system prompt BEFORE
+    // buildMessages consumes it.
     const analysisPlan = buildTurnPlan(attached_documents);
     if (attached_documents?.length) {
         const planLines = analysisPlan.sections.map(
@@ -233,6 +224,15 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             planLines.join("\n") +
             `\nAo esgotar o orçamento de ferramentas, produza a síntese final com o que já foi lido e declare explicitamente qualquer seção pendente. A seção final de síntese é obrigatória.`;
     }
+    const apiMessages = buildMessages(
+        messagesForLLM,
+        docAvailability,
+        systemPromptExtra,
+        undefined,
+        legalResearchUs,
+    );
+
+    const workflowStore = await buildWorkflowStore(userId, userEmail, db);
     const requestedToolBudget = Number(
         (req.body as { tool_budget?: number }).tool_budget,
     );
