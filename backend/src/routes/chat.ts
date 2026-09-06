@@ -636,6 +636,50 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             lines.join("\n");
     }
 
+    // Sprint 1 — deterministic analysis plan, built BEFORE any tool fires.
+    // One section per attached document plus a mandatory final synthesis
+    // section; the plan is persisted on the job and enforced in the prompt.
+    const planSections = [
+        ...(attachedDocuments ?? []).map((d, idx) => ({
+            index: idx + 1,
+            label: d.filename || `document-${idx + 1}`,
+            document_id: d.document_id,
+            description:
+                "Analisar integralmente este documento (cláusulas, anexos e obrigações).",
+        })),
+        {
+            index: (attachedDocuments?.length ?? 0) + 1,
+            label: "Síntese final",
+            document_id: null,
+            description:
+                "Consolidar os achados de todas as seções em um parecer final completo, com citações.",
+        },
+    ];
+    const analysisPlan = {
+        sections: planSections,
+        totalSections: planSections.length,
+        synthesisReserve: true,
+    };
+    if (attachedDocuments?.length) {
+        const planLines = planSections.map(
+            (s) =>
+                `${s.index}. ${s.label}${s.document_id ? "" : " (obrigatória ao final)"}`,
+        );
+        systemPromptExtra =
+            (systemPromptExtra ? systemPromptExtra + "\n\n" : "") +
+            `PLANO DE ANÁLISE DESTA EXECUÇÃO (siga esta ordem, seção por seção, antes de responder):\n` +
+            planLines.join("\n") +
+            `\nAo esgotar o orçamento de ferramentas, produza a síntese final com o que já foi lido e declare explicitamente qualquer seção pendente. A seção final de síntese é obrigatória.`;
+    }
+
+    // Sprint 1 — tool budget for this execution. QA can force a pause
+    // deterministically with tool_budget=1 (job mode).
+    const requestedToolBudget = Number(body.tool_budget);
+    const toolBudget =
+        Number.isFinite(requestedToolBudget) && requestedToolBudget >= 1
+            ? Math.floor(requestedToolBudget)
+            : undefined;
+
     const enrichedMessages = await enrichWithPriorEvents(
         messages,
         chatId,
@@ -773,8 +817,30 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             })}\n\n`,
         );
         analysisJob = job;
+
+        // Sprint 1 — PLAN BEFORE TOOLS: persist the deterministic plan
+        // (built above from the turn's attached documents) via the
+        // planning state, before any tool fires.
+        const plannedJob = await transitionAnalysisJob(
+            db,
+            job.id,
+            "planning",
+            { analysisPlan, expectFrom: "queued" },
+        );
+        analysisJob = plannedJob;
+        write(
+            `data: ${JSON.stringify({
+                type: "job_status",
+                ...toJobStatusPayload(plannedJob),
+                progress: {
+                    completedSections: 0,
+                    totalSections: analysisPlan.totalSections,
+                    currentLabel: planSections[0]?.label ?? "",
+                },
+            })}\n\n`,
+        );
         await transitionAnalysisJob(db, job.id, "running", {
-            expectFrom: "queued",
+            expectFrom: "planning",
         });
         }
         const activeJobId = analysisJob!.id;
@@ -794,6 +860,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             signal: streamAbort.signal,
             projectId: resolvedProjectId,
             job: {
+                maxToolIterations: toolBudget,
                 onToolBatchEnd: async (info) => {
                     const checkpoint = await saveCheckpoint(db, {
                         jobId: activeJobId,

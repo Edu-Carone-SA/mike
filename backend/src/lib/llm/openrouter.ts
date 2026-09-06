@@ -592,10 +592,87 @@ export async function streamOpenRouter(
       const results: NormalizedToolResult[] = await runTools(toolCalls);
       throwIfAborted(params.abortSignal);
 
-      // QA R4-UX-STATE-01: if this was the last allowed iteration and the
-      // model still ended with tool calls (no final message), the loop is
-      // exhausted — flag it so the streaming layer emits a terminal error.
-      if (iter === maxIter - 1) exhaustedToolLoop = true;
+      // Sprint 1 — synthesis reserve: if this was the last allowed tool
+      // iteration and the model still wants tools, don't just flag
+      // exhaustion — spend ONE final call (no tools) asking the model to
+      // synthesize the accumulated work into a final response. Only if
+      // that is impossible does the loop count as exhausted (pause).
+      if (iter === maxIter - 1) {
+        const toolResultMessages = results.map((result) => ({
+          role: "tool" as const,
+          content: result.content,
+          tool_call_id: result.tool_use_id,
+        }));
+        messages = [
+          ...messages,
+          {
+            role: "assistant" as const,
+            content: null,
+            tool_calls: toolCalls.map((c) => ({
+              id: c.id,
+              type: "function" as const,
+              function: {
+                name: c.name,
+                arguments: JSON.stringify(c.input),
+              },
+            })),
+          },
+          ...toolResultMessages,
+          {
+            role: "user" as const,
+            content:
+              "ORÇAMENTO DE FERRAMENTAS ESGOTADO. Você não pode mais chamar ferramentas nesta execução. Com base em TODO o conteúdo lido até agora, produza AGORA a resposta final completa em português do Brasil, usando as informações já obtidas. Se alguma parte não pôde ser analisada, declare explicitamente qual seção ficou pendente. Não chame nenhuma ferramenta.",
+          },
+        ];
+        // Final synthesis call — same stream, no tools.
+        const response = await createChatCompletion({
+          model,
+          messages,
+          stream: true,
+          apiKey: key,
+          signal: params.abortSignal,
+          enableThinking: !!enableThinking,
+        });
+        if (!response.body) throw new Error("OpenRouter response had no body");
+        const reader2 = response.body.getReader();
+        const decoder2 = new TextDecoder();
+        let buffer2 = "";
+        const dsmlFilter2 = new DsmlContentFilter();
+        while (true) {
+          throwIfAborted(params.abortSignal);
+          const { done, value } = await reader2.read();
+          if (done) break;
+          buffer2 += decoder2.decode(value, { stream: true });
+          const extracted2 = extractSseJson(buffer2);
+          buffer2 = extracted2.rest;
+          for (const event of extracted2.events as ChatStreamEvent[]) {
+            const choice = event.choices?.[0];
+            if (!choice?.delta) continue;
+            if (
+              typeof choice.delta.content === "string" &&
+              choice.delta.content
+            ) {
+              const clean = dsmlFilter2.push(choice.delta.content);
+              if (clean) {
+                fullText += clean;
+                callbacks.onContentDelta?.(clean);
+              }
+            }
+          }
+        }
+        const leftover2 = dsmlFilter2.flush();
+        if (leftover2) {
+          fullText += leftover2;
+          callbacks.onContentDelta?.(leftover2);
+        }
+        // Synthesis produced a final answer — the loop is NOT exhausted.
+        if (fullText) {
+          await rawStreamRecorder?.flush("completed");
+          return { fullText, exhaustedToolLoop: false };
+        }
+        exhaustedToolLoop = true;
+        break;
+      }
 
       for (const result of results) {
         messages.push({
