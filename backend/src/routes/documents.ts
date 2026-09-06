@@ -7,7 +7,6 @@ import {
   buildContentDisposition,
   downloadFile,
   deleteFile,
-  getSignedUrl,
   storageKey,
   uploadFile,
   versionStorageKey,
@@ -392,13 +391,14 @@ documentsRouter.get("/:documentId/url", requireAuth, async (req, res) => {
     active.version_number,
     active.source === "assistant_edit",
   );
-  const url = await getSignedUrl(
-    active.storage_path,
-    3600,
-    downloadFilename,
-  );
-  if (!url)
-    return void res.status(503).json({ detail: "Storage not configured" });
+  // Sprint 4 — unified download: the button and the API now hand out the
+  // SAME artifact — a short-lived (5 min) HMAC token served by
+  // GET /download/:token with per-request authorization, Content-Type,
+  // Content-Disposition and audit. The previous S3 presigned URL (1 h,
+  // no per-request auth once handed out) is gone from this route.
+  const url = buildDownloadUrl(active.storage_path, downloadFilename, {
+    expiresInSeconds: 300,
+  });
 
   res.json({
     url,
