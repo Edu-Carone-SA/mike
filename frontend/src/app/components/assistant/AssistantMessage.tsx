@@ -509,6 +509,7 @@ export function AssistantMessage({
                     filename={event.filename}
                     isStreaming={event.isStreaming}
                     hasError={!!event.error}
+                    errorMessage={event.error}
                     showConnector={showConnector}
                 />
             );
