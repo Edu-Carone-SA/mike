@@ -26,6 +26,7 @@ import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeE
 import {
   createAnalysisJob,
   getAnalysisJob,
+  listCheckpoints,
   saveCheckpoint,
   toJobStatusPayload,
   transitionAnalysisJob,
@@ -448,6 +449,24 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
     }
 });
 
+// GET /chat/:chatId/jobs/:jobId — Sprint 1 job status (state machine source
+// of truth; the client can poll this after reload to explain a paused job).
+chatRouter.get("/:chatId/jobs/:jobId", requireAuth, async (req, res) => {
+    const userId = res.locals.userId as string;
+    const userEmail = res.locals.userEmail as string | undefined;
+    const { chatId, jobId } = req.params;
+    const db = createServerSupabase();
+
+    const chat = await getAccessibleChat(chatId, userId, userEmail, db);
+    if (!chat) return void res.status(404).json({ detail: "Chat not found" });
+
+    const job = await getAnalysisJob(db, jobId);
+    if (!job || job.chat_id !== chatId)
+        return void res.status(404).json({ detail: "Job not found" });
+
+    res.json(toJobStatusPayload(job));
+});
+
 // POST /chat — streaming
 chatRouter.post("/", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
@@ -686,11 +705,48 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     }, 15000);
 
     let analysisJob: AnalysisJobRow | null = null;
+    let resumedJob = false;
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
 
+        // Sprint 1 "Termine a tarefa": resume the SAME paused job instead
+        // of starting a generic new analysis. The resumed turn reuses the
+        // job's checkpoints; batches are numbered after the previous run.
+        const resumeJobId =
+            typeof body.resume_job_id === "string" && body.resume_job_id.trim()
+                ? body.resume_job_id.trim()
+                : null;
+        let priorBatches = 0;
+        if (resumeJobId) {
+            const pausedJob = await getAnalysisJob(db, resumeJobId);
+            if (!pausedJob || pausedJob.chat_id !== chatId) {
+                write(`data: ${JSON.stringify({ type: "error", message: "Job de análise não encontrado neste chat." })}\n\n`);
+                write("data: [DONE]\n\n");
+                return;
+            }
+            if (pausedJob.state !== "paused") {
+                write(`data: ${JSON.stringify({ type: "error", message: "Este job não está pausado e não pode ser retomado." })}\n\n`);
+                write("data: [DONE]\n\n");
+                return;
+            }
+            const checkpoints = await listCheckpoints(db, resumeJobId);
+            priorBatches = checkpoints.length;
+            analysisJob = await transitionAnalysisJob(db, resumeJobId, "running", {
+                expectFrom: "paused",
+                finalReason: null,
+            });
+            resumedJob = true;
+            write(
+                `data: ${JSON.stringify({
+                    type: "job_status",
+                    ...toJobStatusPayload(analysisJob),
+                })}\n\n`,
+            );
+        }
+
         // Sprint 1: create the analysis job up front. The state machine
         // is the single source of truth for this turn's lifecycle.
+        if (!resumedJob) {
         const job = await createAnalysisJob(db, {
             userId,
             chatId,
@@ -710,6 +766,9 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         await transitionAnalysisJob(db, job.id, "running", {
             expectFrom: "queued",
         });
+        }
+        const activeJobId = analysisJob!.id;
+        const baseBatchIndex = priorBatches;
 
         const { fullText, events, citations, paused } = await runLLMStream({
             apiMessages,
@@ -727,20 +786,20 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             job: {
                 onToolBatchEnd: async (info) => {
                     const checkpoint = await saveCheckpoint(db, {
-                        jobId: job.id,
-                        sectionIndex: info.batchIndex,
+                        jobId: activeJobId,
+                        sectionIndex: baseBatchIndex + info.batchIndex,
                         sectionLabel: info.toolNames.join(", ").slice(0, 200),
                         status: "completed",
                         toolsUsed: info.toolNames,
                     });
-                    await transitionAnalysisJob(db, job.id, "running", {
+                    await transitionAnalysisJob(db, activeJobId, "running", {
                         checkpointId: checkpoint.id,
-                        toolCallsCount: info.batchIndex,
+                        toolCallsCount: baseBatchIndex + info.batchIndex,
                     });
                     write(
                         `data: ${JSON.stringify({
                             type: "job_status",
-                            jobId: job.id,
+                            jobId: activeJobId,
                             state: "running",
                             progress: {
                                 completedSections: info.batchIndex,
@@ -757,18 +816,18 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         // Persist terminal state in the job entity — never inferred from
         // tool-step wrappers. `paused` is resumable, not a failure.
         if (paused) {
-            await transitionAnalysisJob(db, job.id, "paused", {
+            await transitionAnalysisJob(db, activeJobId, "paused", {
                 expectFrom: "running",
                 finalReason: "tool_budget",
                 errorMessage: "Tool budget exhausted; awaiting user action.",
             });
-            devLog("[chat/stream] job paused", { jobId: job.id, chatId });
+            devLog("[chat/stream] job paused", { jobId: activeJobId, chatId });
             return;
         }
-        await transitionAnalysisJob(db, job.id, "completed", {
+        await transitionAnalysisJob(db, activeJobId, "completed", {
             expectFrom: "running",
         });
-        devLog("[chat/stream] job completed", { jobId: job.id });
+        devLog("[chat/stream] job completed", { jobId: activeJobId });
 
         devLog("[chat/stream] LLM stream finished", {
             fullTextLen: fullText?.length ?? 0,

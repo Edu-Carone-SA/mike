@@ -96,6 +96,12 @@ interface Props {
      * edits flip their per-card UI without per-card clicks.
      */
     resolvedEditStatuses?: Record<string, "accepted" | "rejected">;
+    /**
+     * Sprint 1: fired when the user clicks "Retomar análise" on a
+     * job_paused block. The parent re-posts the chat stream with
+     * resume_job_id so the SAME job (and its checkpoints) continues.
+     */
+    onResumeJob?: (jobId: string) => void;
 }
 
 export function AssistantMessage({
@@ -118,6 +124,7 @@ export function AssistantMessage({
     isDocReloading,
     isEditReloading,
     resolvedEditStatuses,
+    onResumeJob,
 }: Props) {
     const contentDivRef = useRef<HTMLDivElement | null>(null);
     const [isCopied, setIsCopied] = useState(false);
@@ -360,6 +367,26 @@ export function AssistantMessage({
                 <EventBlock key={globalIdx} showConnector={showConnector} dotColor="red">
                     <span className="font-medium text-red-600">Cancelled by user</span>
                     {event.at && <span className="ml-2 text-xs text-gray-500">{new Date(event.at).toLocaleTimeString()}</span>}
+                </EventBlock>
+            );
+        }
+        if (event.type === "job_paused") {
+            return (
+                <EventBlock key={globalIdx} showConnector={showConnector}>
+                    <span className="font-medium text-amber-600">
+                        Análise pausada
+                    </span>
+                    <p className="mt-1 text-sm text-gray-600">{event.message}</p>
+                    {event.jobId && onResumeJob && (
+                        <button
+                            type="button"
+                            data-testid="resume-job-button"
+                            className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                            onClick={() => onResumeJob(event.jobId!)}
+                        >
+                            Retomar análise
+                        </button>
+                    )}
                 </EventBlock>
             );
         }

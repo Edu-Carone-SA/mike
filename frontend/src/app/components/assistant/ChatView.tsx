@@ -34,9 +34,12 @@ interface Props {
                 AssistantEvent,
                 { type: "ask_inputs_response" }
             >;
+            resumeJobId?: string;
         },
     ) => Promise<string | null>;
     cancel: () => void;
+    /** Sprint 1: resume a paused analysis job ("Termine a tarefa"). */
+    resumeJob?: (jobId: string) => Promise<void>;
 }
 
 const ASSISTANT_PANEL_TRANSITION_MS = 500;
@@ -58,6 +61,7 @@ export function ChatView({
     isResponseLoading,
     handleChat,
     cancel,
+    resumeJob,
 }: Props) {
     const [tabs, setTabs] = useState<AssistantSidePanelTab[]>([]);
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -691,6 +695,14 @@ export function ChatView({
                                         ) : (
                                             <AssistantMessage
                                                 events={msg.events}
+                                                onResumeJob={
+                                                    resumeJob
+                                                        ? (jobId) =>
+                                                              void resumeJob(
+                                                                  jobId,
+                                                              )
+                                                        : undefined
+                                                }
                                                 isStreaming={
                                                     i === messages.length - 1 &&
                                                     isResponseLoading

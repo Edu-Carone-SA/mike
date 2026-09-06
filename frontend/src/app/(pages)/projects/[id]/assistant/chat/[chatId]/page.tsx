@@ -263,8 +263,14 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         renameChat: renameChatInHistory,
     } = useChatHistoryContext();
     const [initialMessages] = useState<Message[]>(newChatMessages ?? []);
-    const { messages, isResponseLoading, handleChat, setMessages, cancel } =
-        useAssistantChat({ initialMessages, chatId, projectId });
+    const {
+        messages,
+        isResponseLoading,
+        handleChat,
+        setMessages,
+        cancel,
+        resumeJob,
+    } = useAssistantChat({ initialMessages, chatId, projectId });
     const pendingInitialUserMessageRef = useRef<Message | null>(
         initialMessages.length === 1 && initialMessages[0].role === "user"
             ? initialMessages[0]
@@ -1250,6 +1256,9 @@ export default function ProjectAssistantChatPage({ params }: Props) {
                                         <AssistantMessage
                                             key={i}
                                             events={msg.events}
+                                            onResumeJob={(jobId) =>
+                                                void resumeJob(jobId)
+                                            }
                                             isStreaming={
                                                 i === messages.length - 1 &&
                                                 isResponseLoading
