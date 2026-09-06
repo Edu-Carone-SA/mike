@@ -338,11 +338,15 @@ export function TRView({ reviewId, projectId }: Props) {
             return;
         }
         if (columns.length === 0) {
-            setGenerationError("Add at least one column before running.");
+            setGenerationError(
+                "Nenhuma coluna configurada nesta revisão. Adicione ao menos uma coluna antes de executar.",
+            );
             return;
         }
         if (documents.length === 0) {
-            setGenerationError("Add at least one document before running.");
+            setGenerationError(
+                "Nenhum documento vinculado a esta revisão. Abra a aba 'Documents' e adicione documentos antes de executar.",
+            );
             return;
         }
 
@@ -884,10 +888,7 @@ export function TRView({ reviewId, projectId }: Props) {
                                     // so the icon-only copy needs an accessible name.
                                     title: "Run",
                                     disabled:
-                                        generating ||
-                                        columns.length === 0 ||
-                                        documents.length === 0 ||
-                                        savingColumnsConfig,
+                                        generating || savingColumnsConfig,
                                     icon: generating ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
                                     ) : (
@@ -905,7 +906,11 @@ export function TRView({ reviewId, projectId }: Props) {
                 />
 
                 {generationError && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    <div
+                        role="alert"
+                        data-testid="tabular-generation-error"
+                        className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                    >
                         <AlertCircle className="h-4 w-4 shrink-0" />
                         <span className="flex-1">{generationError}</span>
                         <button
