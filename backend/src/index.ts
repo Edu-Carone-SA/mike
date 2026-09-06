@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { startDocumentJobWorker } from "./lib/documentJobWorker";
 import "express-async-errors";
 import express from "express";
 import cors from "cors";
@@ -222,4 +223,6 @@ app.use((error: unknown, req: express.Request, res: express.Response, _next: exp
 
 app.listen(PORT, () => {
   console.log(`Mike backend running on port ${PORT}`);
+  // Sprint 2: async document processing worker (in-process ticker).
+  startDocumentJobWorker();
 });
