@@ -66,11 +66,12 @@ function textOf(nodes: unknown[]): string {
             continue;
         }
         const name = elName(n);
-        if (name === "w:t") {
-            out += textOf(elChildren(n));
-        } else if (name !== null) {
-            out += textOf(elChildren(n));
-        }
+        if (name === null) continue;
+        // Tracked deletions: text inside <w:del> is marked for removal —
+        // it will disappear when changes are accepted, so the candidate
+        // manifest must NOT count it as present content.
+        if (name === "w:del") continue;
+        out += textOf(elChildren(n));
     }
     return out;
 }
