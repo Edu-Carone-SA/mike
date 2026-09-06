@@ -23,6 +23,14 @@ import {
 } from "../lib/userSettings";
 import { checkProjectAccess } from "../lib/access";
 import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeError";
+import {
+  createAnalysisJob,
+  getAnalysisJob,
+  saveCheckpoint,
+  toJobStatusPayload,
+  transitionAnalysisJob,
+  type AnalysisJobRow,
+} from "../lib/analysisJobs";
 
 export const chatRouter = Router();
 
@@ -644,7 +652,25 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     const streamAbort = new AbortController();
     let streamFinished = false;
     res.on("close", () => {
-        if (!streamFinished) streamAbort.abort();
+        if (!streamFinished) {
+            streamAbort.abort();
+            // Sprint 1: client disconnected mid-stream — cancel the job
+            // best-effort (fire-and-forget; guarded against races).
+            if (analysisJob) {
+                void (async () => {
+                    try {
+                        const current = await getAnalysisJob(db, analysisJob.id);
+                        if (current && !["completed", "failed", "cancelled", "paused"].includes(current.state)) {
+                            await transitionAnalysisJob(db, analysisJob.id, "cancelled", {
+                                finalReason: "user_cancelled",
+                            });
+                        }
+                    } catch {
+                        /* best-effort */
+                    }
+                })();
+            }
+        }
     });
 
     // SSE keepalive: send a comment every 15s to prevent ALB idle timeout (60s default)
@@ -659,10 +685,33 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
     }, 15000);
 
+    let analysisJob: AnalysisJobRow | null = null;
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
 
-        const { fullText, events, citations } = await runLLMStream({
+        // Sprint 1: create the analysis job up front. The state machine
+        // is the single source of truth for this turn's lifecycle.
+        const job = await createAnalysisJob(db, {
+            userId,
+            chatId,
+            projectId: resolvedProjectId,
+            kind: "chat_analysis",
+            model: model ?? null,
+            requestId: crypto.randomUUID(),
+            buildSha: process.env.COMMIT_SHA ?? null,
+        });
+        write(
+            `data: ${JSON.stringify({
+                type: "job_status",
+                ...toJobStatusPayload(job),
+            })}\n\n`,
+        );
+        analysisJob = job;
+        await transitionAnalysisJob(db, job.id, "running", {
+            expectFrom: "queued",
+        });
+
+        const { fullText, events, citations, paused } = await runLLMStream({
             apiMessages,
             docStore,
             docIndex,
@@ -675,7 +724,51 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             apiKeys,
             signal: streamAbort.signal,
             projectId: resolvedProjectId,
+            job: {
+                onToolBatchEnd: async (info) => {
+                    const checkpoint = await saveCheckpoint(db, {
+                        jobId: job.id,
+                        sectionIndex: info.batchIndex,
+                        sectionLabel: info.toolNames.join(", ").slice(0, 200),
+                        status: "completed",
+                        toolsUsed: info.toolNames,
+                    });
+                    await transitionAnalysisJob(db, job.id, "running", {
+                        checkpointId: checkpoint.id,
+                        toolCallsCount: info.batchIndex,
+                    });
+                    write(
+                        `data: ${JSON.stringify({
+                            type: "job_status",
+                            jobId: job.id,
+                            state: "running",
+                            progress: {
+                                completedSections: info.batchIndex,
+                                totalSections: 0,
+                                currentLabel: info.toolNames.join(", "),
+                            },
+                            checkpointId: checkpoint.id,
+                        })}\n\n`,
+                    );
+                },
+            },
         });
+
+        // Persist terminal state in the job entity — never inferred from
+        // tool-step wrappers. `paused` is resumable, not a failure.
+        if (paused) {
+            await transitionAnalysisJob(db, job.id, "paused", {
+                expectFrom: "running",
+                finalReason: "tool_budget",
+                errorMessage: "Tool budget exhausted; awaiting user action.",
+            });
+            devLog("[chat/stream] job paused", { jobId: job.id, chatId });
+            return;
+        }
+        await transitionAnalysisJob(db, job.id, "completed", {
+            expectFrom: "running",
+        });
+        devLog("[chat/stream] job completed", { jobId: job.id });
 
         devLog("[chat/stream] LLM stream finished", {
             fullTextLen: fullText?.length ?? 0,
@@ -706,7 +799,23 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                 .eq("id", chatId);
         }
     } catch (err) {
+        // Sprint 1: persist the terminal state in the job entity too.
+        // Guarded: never overwrite a state that already moved on.
+        const safeFailJob = async (state: "failed" | "cancelled", reason: "user_cancelled" | null, message?: string) => {
+            if (!analysisJob) return;
+            try {
+                const current = await getAnalysisJob(db, analysisJob.id);
+                if (!current || ["completed", "failed", "cancelled", "paused"].includes(current.state)) return;
+                await transitionAnalysisJob(db, analysisJob.id, state, {
+                    finalReason: reason,
+                    errorMessage: message ?? null,
+                });
+            } catch (jobErr) {
+                console.error("[chat/stream] failed to persist job state", safeErrorLog(jobErr));
+            }
+        };
         if (isAbortError(err)) {
+            await safeFailJob("cancelled", "user_cancelled");
             devLog("[chat/stream] client aborted stream", { chatId });
             if (err instanceof AssistantStreamError) {
                 const partial = buildCancelledAssistantMessage({
@@ -748,6 +857,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
         console.error("[chat/stream] error:", safeErrorLog(err));
         const message = userFacingLlmError(err, "Stream error");
+        await safeFailJob("failed", null, message);
         const errorEvents = err instanceof AssistantStreamError
             ? stripTransientAssistantEvents(err.events)
             : [{ type: "error" as const, message }];

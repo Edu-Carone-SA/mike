@@ -165,10 +165,29 @@ export async function runLLMStream(params: {
    * generated docs still get persisted, but as standalone documents.
    */
   projectId?: string | null;
+  /**
+   * Sprint 1 job orchestration. When present, tool-loop exhaustion no
+   * longer emits a generic error: the stream ends with a typed `paused`
+   * event (tool budget) so the client can offer resume/reduce/partial,
+   * and each tool batch is reported for checkpointing.
+   */
+  job?: {
+    /** Hard cap on tool iterations for this call (default 10). */
+    maxToolIterations?: number;
+    /** Called after each tool batch completes, for checkpointing. */
+    onToolBatchEnd?: (info: {
+      batchIndex: number;
+      toolNames: string[];
+      fullText: string;
+      events: AssistantEvent[];
+    }) => Promise<void>;
+  };
 }): Promise<{
   fullText: string;
   events: AssistantEvent[];
   citations: unknown[];
+  /** True when the tool budget was exhausted (job mode only). */
+  paused?: boolean;
 }> {
   const {
     apiMessages,
@@ -186,6 +205,7 @@ export async function runLLMStream(params: {
     apiKeys,
     signal,
     projectId,
+    job,
   } = params;
   const researchTools = includeResearchTools ? COURTLISTENER_TOOLS : [];
   const mcpTools = await buildUserMcpTools(userId, db);
@@ -229,6 +249,7 @@ export async function runLLMStream(params: {
     };
   let fullText = "";
   let iterText = "";
+  let batchIndex = 0;
   let iterVisibleText = "";
   let iterReasoning = "";
   let visibleTailBuffer = "";
@@ -351,7 +372,7 @@ export async function runLLMStream(params: {
       systemPrompt: systemPrompt + i18Suffix,
       messages: chatMessages,
       tools: activeTools as OpenAIToolSchema[],
-      maxIterations: 10,
+      maxIterations: job?.maxToolIterations ?? 10,
       apiKeys,
       enableThinking: false,
       abortSignal: signal,
@@ -502,6 +523,22 @@ export async function runLLMStream(params: {
           throw new AssistantStreamAskInputsPause();
         }
 
+        // Sprint 1: report each completed tool batch for checkpointing.
+        if (job?.onToolBatchEnd) {
+          batchIndex += 1;
+          try {
+            await job.onToolBatchEnd({
+              batchIndex,
+              toolNames: toolCalls.map((c) => c.function.name),
+              fullText,
+              events,
+            });
+          } catch (cpErr) {
+            // Checkpointing must never kill the analysis itself.
+            devLog("[chat/stream] checkpoint callback failed", cpErr);
+          }
+        }
+
         // Index alignment would break if any tool branch skips its
         // push (unhandled tool name, disabled store, guard failure).
         // Each tool_result already carries its tool_call_id, so key off
@@ -550,6 +587,22 @@ export async function runLLMStream(params: {
   // truth. Keep the empty-content check as a secondary safety net.
   const contentEvents = events.filter((e) => e.type === "content");
   if (streamResult?.exhaustedToolLoop || (!fullText && contentEvents.length === 0)) {
+    if (job) {
+      // Sprint 1: typed pause instead of a false failure. The client can
+      // offer resume / reduce scope / labelled partial. Exactly one
+      // terminal event, followed by [DONE].
+      write(
+        `data: ${JSON.stringify({
+          type: "paused",
+          reason: "tool_budget",
+          completedBatches: batchIndex,
+          message:
+            "Análise pausada: o orçamento de etapas desta execução foi atingido. Você pode retomar, reduzir o escopo ou solicitar um resultado parcial.",
+        })}\n\n`,
+      );
+      write("data: [DONE]\n\n");
+      return { fullText: "", events, citations: [], paused: true };
+    }
     write(`data: ${JSON.stringify({ type: "error", message: "Análise interrompida: o documento é muito longo ou a tarefa exige mais etapas do que o limite atual. Tente reduzir o escopo ou dividir em partes." })}\n\n`);
     write("data: [DONE]\n\n");
     return { fullText: "", events: [{ type: "error", message: "Análise interrompida" } as any], citations: [] };
