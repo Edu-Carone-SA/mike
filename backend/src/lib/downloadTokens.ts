@@ -39,9 +39,19 @@ function timingSafeEqStr(a: string, b: string): boolean {
     return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-export function signDownload(path: string, filename: string): string {
-    const payload = JSON.stringify({ p: path, f: filename });
-    const enc = b64urlEncode(Buffer.from(payload, "utf8"));
+export function signDownload(
+    path: string,
+    filename: string,
+    opts?: { expiresInSeconds?: number },
+): string {
+    const payload: Record<string, unknown> = { p: path, f: filename };
+    // Sprint 4: short-lived tokens for NEW downloads. Omitted exp keeps
+    // existing chat-history links working (they are HMAC-bound to the
+    // storage path and still enforce per-request authorization).
+    if (opts?.expiresInSeconds) {
+        payload.exp = Math.floor(Date.now() / 1000) + opts.expiresInSeconds;
+    }
+    const enc = b64urlEncode(Buffer.from(JSON.stringify(payload), "utf8"));
     const sig = crypto
         .createHmac("sha256", getSecret())
         .update(enc)
@@ -51,7 +61,7 @@ export function signDownload(path: string, filename: string): string {
 
 export function verifyDownload(
     token: string,
-): { path: string; filename: string } | null {
+): { path: string; filename: string; expired?: boolean } | null {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
     const [enc, sigEnc] = parts;
@@ -64,8 +74,14 @@ export function verifyDownload(
         const parsed = JSON.parse(b64urlDecode(enc).toString("utf8")) as {
             p: string;
             f: string;
+            exp?: number;
         };
         if (!parsed?.p || !parsed?.f) return null;
+        if (typeof parsed.exp === "number") {
+            if (Math.floor(Date.now() / 1000) > parsed.exp) {
+                return { path: parsed.p, filename: parsed.f, expired: true };
+            }
+        }
         return { path: parsed.p, filename: parsed.f };
     } catch {
         return null;
@@ -76,6 +92,10 @@ export function verifyDownload(
  * Returns a relative download URL (e.g. "/download/abc.def"). The frontend
  * prefixes it with NEXT_PUBLIC_API_BASE_URL when rendering `<a href=…>`.
  */
-export function buildDownloadUrl(path: string, filename: string): string {
-    return `/download/${signDownload(path, filename)}`;
+export function buildDownloadUrl(
+    path: string,
+    filename: string,
+    opts?: { expiresInSeconds?: number },
+): string {
+    return `/download/${signDownload(path, filename, opts)}`;
 }
