@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { requireAuth } from "../middleware/auth";
 import { createServerSupabase } from "../lib/supabase";
 import { extractDocumentMarkdown } from "./tabular";
@@ -23,6 +24,11 @@ import {
   loadActiveVersion,
 } from "../lib/documentVersions";
 import { ensureDocAccess } from "../lib/access";
+import {
+  createDocumentJob,
+  logDocumentJobEvent,
+  toDocumentJobStatusPayload,
+} from "../lib/documentJobs";
 import { singleFileUpload } from "../lib/upload";
 import {
   ALLOWED_DOCUMENT_TYPES,
@@ -146,29 +152,91 @@ documentsRouter.get("/:documentId", requireAuth, async (req, res) => {
   // Expose an explicit analysis readiness indicator using the same extraction
   // pipeline /generate relies on.
   const docWithMeta = docs[0] as {
-    storage_path?: string | null;
-    file_type?: string | null;
+    current_version_id?: string | null;
   } & Record<string, unknown>;
+
+  // Sprint 2 readiness contract: analysis_ready / extracted_text_length /
+  // processing_state / failure_reason come from PERSISTED pipeline state
+  // (document_versions.extracted_text + document_jobs) — this endpoint no
+  // longer downloads and re-extracts the file on every call.
   let analysis_ready = false;
   let extracted_text_length = 0;
-  if (typeof docWithMeta.storage_path === "string" && docWithMeta.storage_path) {
-    try {
-      const buf = await downloadFile(docWithMeta.storage_path);
-      if (buf) {
-        const markdown = await extractDocumentMarkdown(
-          buf,
-          typeof docWithMeta.file_type === "string" ? docWithMeta.file_type : "",
-        );
-        extracted_text_length = markdown.trim().length;
-        analysis_ready = extracted_text_length > 0;
-      }
-    } catch {
-      // Extraction failures leave analysis_ready=false — same signal the
-      // tabular run would surface as an error cell.
-    }
+  let processing_state: string;
+  let failure_reason: string | null = null;
+  if (typeof docWithMeta.current_version_id === "string") {
+    const { data: version } = await db
+      .from("document_versions")
+      .select("extracted_text")
+      .eq("id", docWithMeta.current_version_id)
+      .single();
+    extracted_text_length = (version?.extracted_text ?? "").trim().length;
+    analysis_ready = extracted_text_length > 0;
   }
-  res.json({ ...docWithMeta, analysis_ready, extracted_text_length });
+  const { data: latestJob } = await db
+    .from("document_jobs")
+    .select("state, failure_reason")
+    .eq("document_id", documentId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestJob) {
+    processing_state = latestJob.state;
+    failure_reason = latestJob.failure_reason ?? null;
+  } else {
+    // Legacy documents uploaded before Sprint 2 have no job row.
+    processing_state = analysis_ready ? "ready" : "pending_extraction";
+  }
+  res.json({
+    ...docWithMeta,
+    analysis_ready,
+    extracted_text_length,
+    processing_state,
+    failure_reason,
+  });
 });
+
+// GET /single-documents/:documentId/processing
+// Sprint 2: processing status for this document's latest pipeline job —
+// the UI polls this for progress (pages processed/total, state, retry).
+documentsRouter.get(
+  "/:documentId/processing",
+  requireAuth,
+  async (req, res) => {
+    const userId = res.locals.userId as string;
+    const userEmail = res.locals.userEmail as string | undefined;
+    const { documentId } = req.params;
+    const db = createServerSupabase();
+
+    const { data: doc } = await db
+      .from("documents")
+      .select("id, user_id, project_id")
+      .eq("id", documentId)
+      .single();
+    if (!doc)
+      return void res.status(404).json({ detail: "Document not found" });
+    const access = await ensureDocAccess(
+      doc as { id: string; user_id: string; project_id: string | null },
+      userId,
+      userEmail,
+      db,
+    );
+    if (!access.ok)
+      return void res.status(404).json({ detail: "Document not found" });
+
+    const { data: job } = await db
+      .from("document_jobs")
+      .select("*")
+      .eq("document_id", documentId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!job)
+      return void res
+        .status(404)
+        .json({ detail: "No processing job for this document" });
+    res.json(toDocumentJobStatusPayload(job));
+  },
+);
 
 // GET /single-documents/:documentId/display
 // Optional ?version_id= renders a historical version. Defaults to the
@@ -1473,6 +1541,35 @@ async function handleDocumentUpload(
       .select("*")
       .eq("id", docId)
       .single();
+
+    // Sprint 2: create the async processing job (extraction/OCR) —
+    // idempotent on the client-supplied key so a UI retry after a
+    // reload never duplicates the document or the job.
+    const idempotencyKey =
+      (req.headers["x-idempotency-key"] as string | undefined)?.trim() ||
+      `upload:${docId}`;
+    const { job: processingJob, created: jobCreated } = await createDocumentJob(
+      db,
+      {
+        userId,
+        idempotencyKey,
+        projectId,
+        documentId: docId,
+        fileName: filename,
+        fileType: suffix,
+        sizeBytes: content.byteLength,
+        requestId: crypto.randomUUID(),
+        buildSha: process.env.COMMIT_SHA ?? null,
+      },
+    );
+    logDocumentJobEvent({
+      event: jobCreated ? "created" : "deduped",
+      jobId: processingJob.id,
+      documentId: docId,
+      projectId,
+      state: processingJob.state,
+    });
+
     // Surface storage paths to the caller for backward compatibility.
     const responseDoc = updated
       ? {
@@ -1484,6 +1581,7 @@ async function handleDocumentUpload(
           size_bytes: content.byteLength,
           page_count: pageCount,
           active_version_number: 1,
+          processing_job: toDocumentJobStatusPayload(processingJob),
         }
       : updated;
     return void res.status(201).json(responseDoc);
