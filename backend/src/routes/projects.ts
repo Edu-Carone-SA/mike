@@ -1,6 +1,12 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { requireAuth } from "../middleware/auth";
 import { createServerSupabase } from "../lib/supabase";
+import {
+  createDocumentJob,
+  logDocumentJobEvent,
+  toDocumentJobStatusPayload,
+} from "../lib/documentJobs";
 import { createClient } from "@supabase/supabase-js";
 import {
   attachActiveVersionPaths,
@@ -985,6 +991,34 @@ export async function handleDocumentUpload(
       .select("*")
       .eq("id", docId)
       .single();
+
+    // Sprint 2: idempotent processing job for this upload (same contract
+    // as single-documents): UI retries after reload never duplicate.
+    const idempotencyKeyProject =
+        (req.headers["x-idempotency-key"] as string | undefined)?.trim() ||
+        `upload:${docId}`;
+    const { job: processingJob, created: jobCreated } = await createDocumentJob(
+        db,
+        {
+            userId,
+            idempotencyKey: idempotencyKeyProject,
+            projectId,
+            documentId: docId,
+            fileName: filename,
+            fileType: suffix,
+            sizeBytes: content.byteLength,
+            requestId: crypto.randomUUID(),
+            buildSha: process.env.COMMIT_SHA ?? null,
+        },
+    );
+    logDocumentJobEvent({
+        event: jobCreated ? "created" : "deduped",
+        jobId: processingJob.id,
+        documentId: docId,
+        projectId,
+        state: processingJob.state,
+    });
+
     const responseDoc = updated
         ? {
             ...updated,
@@ -995,6 +1029,7 @@ export async function handleDocumentUpload(
             size_bytes: content.byteLength,
             page_count: pageCount,
             active_version_number: 1,
+            processing_job: toDocumentJobStatusPayload(processingJob),
         }
       : updated;
     return void res.status(201).json(responseDoc);
