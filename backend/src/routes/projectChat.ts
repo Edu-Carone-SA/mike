@@ -100,6 +100,30 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
     }
 
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    // Sprint 4 fix: attached_documents (request body) must reach the doc
+    // context. buildDocContext resolves doc labels (doc-0, …) from
+    // messages[].files — without this merge the attachments were only
+    // named in the system prompt, and read_document/edit_document on them
+    // returned "Document not found" while the doc sat ready in storage.
+    if (lastUser && attached_documents?.length) {
+        const existing = Array.isArray(lastUser.files) ? lastUser.files : [];
+        const seen = new Set(
+            existing
+                .map((f) => (f as { document_id?: unknown })?.document_id)
+                .filter((id): id is string => typeof id === "string"),
+        );
+        const attached = attached_documents as {
+            filename: string;
+            document_id: string;
+        }[];
+        const merged = [
+            ...existing,
+            ...attached
+                .filter((d) => !seen.has(d.document_id))
+                .map((d) => ({ document_id: d.document_id, filename: d.filename })),
+        ];
+        lastUser.files = merged;
+    }
     if (askInputsResponse) {
         await appendAskInputsResponseToLastAssistantMessage(
             db,
