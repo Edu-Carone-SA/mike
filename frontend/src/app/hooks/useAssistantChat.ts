@@ -371,6 +371,7 @@ export function useAssistantChat({
             messages: apiMessages,
             chat_id: chatId,
             model,
+            resume_job_id: opts?.resumeJobId,
             displayed_doc: displayedDoc
               ? {
                   filename: displayedDoc.filename,
