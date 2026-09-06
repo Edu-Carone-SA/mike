@@ -492,11 +492,19 @@ export const PdfView = React.memo(function PdfView({
     // Re-render at new scale when container is resized (debounced 250ms
     // to prevent rapid re-renders during layout transitions that cause
     // visible flickering — the PDF canvas is wiped and re-drawn each time).
+    // Sprint 4: the wipe used to reset the scroll to the top, losing the
+    // reader's place and the open citation during a resize (or during an
+    // SSE-driven layout shift). Preserve the current PAGE and restore it
+    // after the re-render, and keep the active quote highlighted.
     useEffect(() => {
         if (!pdfDocRef.current) return;
         const timer = setTimeout(() => {
             if (pdfDocRef.current) {
-                renderPDF(pdfDocRef.current, quoteListRef.current);
+                renderPDF(
+                    pdfDocRef.current,
+                    quoteListRef.current,
+                    currentPageRef.current,
+                );
             }
         }, 250);
         return () => clearTimeout(timer);
