@@ -107,6 +107,28 @@ describe("docxManifest", () => {
         expect(d.losses).toEqual([]);
     });
 
+    it("tracked deletion (w:del) counts as removed content", async () => {
+        // Paragraph with the annex heading wrapped in a tracked deletion.
+        const zip = new JSZip();
+        const paragraphs = [
+            p("ANEXO I — TERMOS E CONDIÇÕES GERAIS"),
+            p("1. DAS DEFINIÇÕES"),
+            p("Texto da cláusula primeira."),
+            `<w:p><w:del w:id="1"><w:r><w:delText xml:space="preserve">ANEXO II — POLÍTICA DE PRIVACIDADE</w:delText></w:r></w:del></w:p>`,
+        ];
+        zip.file(
+            "word/document.xml",
+            `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.join("")}<w:sectPr/></w:body></w:document>`,
+        );
+        const after = await buildDocxManifest(
+            await zip.generateAsync({ type: "nodebuffer" }),
+        );
+        const before = await buildDocxManifest(await makeDocx());
+        const d = diffDocxManifests(before, after);
+        expect(d.ok).toBe(false);
+        expect(d.losses.join("\n")).toContain("ANEXO II");
+    });
+
     it("allowedClauseRemovals whitelist works", async () => {
         // Simulate removal of clause "2" by removing its heading only.
         const before = await buildDocxManifest(await makeDocx());
