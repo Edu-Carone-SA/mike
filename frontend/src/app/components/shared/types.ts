@@ -93,6 +93,13 @@ export type AssistantEvent =
   | { type: "error"; message: string }
   | { type: "cancelled"; reason: string; at: string }
   | {
+      /** Sprint 1: tool budget exhausted — resumable, not an error. */
+      type: "job_paused";
+      reason: string;
+      jobId?: string;
+      message: string;
+    }
+  | {
       type: "tool_call_start";
       name: string;
       isStreaming?: boolean;

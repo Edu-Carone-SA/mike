@@ -23,6 +23,16 @@ import {
 } from "../lib/userSettings";
 import { checkProjectAccess } from "../lib/access";
 import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeError";
+import {
+  createAnalysisJob,
+  getAnalysisJob,
+  listCheckpoints,
+  logJobEvent,
+  saveCheckpoint,
+  toJobStatusPayload,
+  transitionAnalysisJob,
+  type AnalysisJobRow,
+} from "../lib/analysisJobs";
 
 export const chatRouter = Router();
 
@@ -440,6 +450,24 @@ chatRouter.post("/:chatId/generate-title", requireAuth, async (req, res) => {
     }
 });
 
+// GET /chat/:chatId/jobs/:jobId — Sprint 1 job status (state machine source
+// of truth; the client can poll this after reload to explain a paused job).
+chatRouter.get("/:chatId/jobs/:jobId", requireAuth, async (req, res) => {
+    const userId = res.locals.userId as string;
+    const userEmail = res.locals.userEmail as string | undefined;
+    const { chatId, jobId } = req.params;
+    const db = createServerSupabase();
+
+    const chat = await getAccessibleChat(chatId, userId, userEmail, db);
+    if (!chat) return void res.status(404).json({ detail: "Chat not found" });
+
+    const job = await getAnalysisJob(db, jobId);
+    if (!job || job.chat_id !== chatId)
+        return void res.status(404).json({ detail: "Job not found" });
+
+    res.json(toJobStatusPayload(job));
+});
+
 // POST /chat — streaming
 chatRouter.post("/", requireAuth, async (req, res) => {
     const userId = res.locals.userId as string;
@@ -644,7 +672,25 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     const streamAbort = new AbortController();
     let streamFinished = false;
     res.on("close", () => {
-        if (!streamFinished) streamAbort.abort();
+        if (!streamFinished) {
+            streamAbort.abort();
+            // Sprint 1: client disconnected mid-stream — cancel the job
+            // best-effort (fire-and-forget; guarded against races).
+            if (analysisJob) {
+                void (async () => {
+                    try {
+                        const current = await getAnalysisJob(db, analysisJob.id);
+                        if (current && !["completed", "failed", "cancelled", "paused"].includes(current.state)) {
+                            await transitionAnalysisJob(db, analysisJob.id, "cancelled", {
+                                finalReason: "user_cancelled",
+                            });
+                        }
+                    } catch {
+                        /* best-effort */
+                    }
+                })();
+            }
+        }
     });
 
     // SSE keepalive: send a comment every 15s to prevent ALB idle timeout (60s default)
@@ -659,10 +705,82 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
     }, 15000);
 
+    let analysisJob: AnalysisJobRow | null = null;
+    let resumedJob = false;
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
 
-        const { fullText, events, citations } = await runLLMStream({
+        // Sprint 1 "Termine a tarefa": resume the SAME paused job instead
+        // of starting a generic new analysis. The resumed turn reuses the
+        // job's checkpoints; batches are numbered after the previous run.
+        const resumeJobId =
+            typeof body.resume_job_id === "string" && body.resume_job_id.trim()
+                ? body.resume_job_id.trim()
+                : null;
+        let priorBatches = 0;
+        if (resumeJobId) {
+            const pausedJob = await getAnalysisJob(db, resumeJobId);
+            if (!pausedJob || pausedJob.chat_id !== chatId) {
+                write(`data: ${JSON.stringify({ type: "error", message: "Job de análise não encontrado neste chat." })}\n\n`);
+                write("data: [DONE]\n\n");
+                return;
+            }
+            if (pausedJob.state !== "paused") {
+                write(`data: ${JSON.stringify({ type: "error", message: "Este job não está pausado e não pode ser retomado." })}\n\n`);
+                write("data: [DONE]\n\n");
+                return;
+            }
+            const checkpoints = await listCheckpoints(db, resumeJobId);
+            priorBatches = checkpoints.length;
+            analysisJob = await transitionAnalysisJob(db, resumeJobId, "running", {
+                expectFrom: "paused",
+                finalReason: null,
+            });
+            resumedJob = true;
+            logJobEvent({
+                event: "resumed",
+                jobId: analysisJob.id,
+                chatId,
+                requestId: analysisJob.request_id,
+                buildSha: analysisJob.build_sha,
+                state: "running",
+                toolCallsCount: analysisJob.tool_calls_count,
+            });
+            write(
+                `data: ${JSON.stringify({
+                    type: "job_status",
+                    ...toJobStatusPayload(analysisJob),
+                })}\n\n`,
+            );
+        }
+
+        // Sprint 1: create the analysis job up front. The state machine
+        // is the single source of truth for this turn's lifecycle.
+        if (!resumedJob) {
+        const job = await createAnalysisJob(db, {
+            userId,
+            chatId,
+            projectId: resolvedProjectId,
+            kind: "chat_analysis",
+            model: model ?? null,
+            requestId: crypto.randomUUID(),
+            buildSha: process.env.COMMIT_SHA ?? null,
+        });
+        write(
+            `data: ${JSON.stringify({
+                type: "job_status",
+                ...toJobStatusPayload(job),
+            })}\n\n`,
+        );
+        analysisJob = job;
+        await transitionAnalysisJob(db, job.id, "running", {
+            expectFrom: "queued",
+        });
+        }
+        const activeJobId = analysisJob!.id;
+        const baseBatchIndex = priorBatches;
+
+        const { fullText, events, citations, paused } = await runLLMStream({
             apiMessages,
             docStore,
             docIndex,
@@ -675,7 +793,87 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             apiKeys,
             signal: streamAbort.signal,
             projectId: resolvedProjectId,
+            job: {
+                onToolBatchEnd: async (info) => {
+                    const checkpoint = await saveCheckpoint(db, {
+                        jobId: activeJobId,
+                        sectionIndex: baseBatchIndex + info.batchIndex,
+                        sectionLabel: info.toolNames.join(", ").slice(0, 200),
+                        status: "completed",
+                        toolsUsed: info.toolNames,
+                    });
+                    await transitionAnalysisJob(db, activeJobId, "running", {
+                        checkpointId: checkpoint.id,
+                        toolCallsCount: baseBatchIndex + info.batchIndex,
+                    });
+                    logJobEvent({
+                        event: "checkpoint",
+                        jobId: activeJobId,
+                        chatId,
+                        requestId: analysisJob?.request_id ?? null,
+                        buildSha: analysisJob?.build_sha ?? null,
+                        state: "running",
+                        toolCallsCount: baseBatchIndex + info.batchIndex,
+                        checkpointId: checkpoint.id,
+                    });
+                    write(
+                        `data: ${JSON.stringify({
+                            type: "job_status",
+                            jobId: activeJobId,
+                            state: "running",
+                            progress: {
+                                completedSections: info.batchIndex,
+                                totalSections: 0,
+                                currentLabel: info.toolNames.join(", "),
+                            },
+                            checkpointId: checkpoint.id,
+                        })}\n\n`,
+                    );
+                },
+            },
         });
+
+        // Persist terminal state in the job entity — never inferred from
+        // tool-step wrappers. `paused` is resumable, not a failure.
+        if (paused) {
+            const pausedRow = await transitionAnalysisJob(db, activeJobId, "paused", {
+                expectFrom: "running",
+                finalReason: "tool_budget",
+                errorMessage: "Tool budget exhausted; awaiting user action.",
+            });
+            logJobEvent({
+                event: "paused",
+                jobId: activeJobId,
+                chatId,
+                requestId: pausedRow.request_id,
+                buildSha: pausedRow.build_sha,
+                state: "paused",
+                finalReason: "tool_budget",
+                model: pausedRow.model,
+                modelEffective: pausedRow.model_effective,
+                toolCallsCount: pausedRow.tool_calls_count,
+            });
+            devLog("[chat/stream] job paused", { jobId: activeJobId, chatId });
+            return;
+        }
+        const doneRow = await transitionAnalysisJob(db, activeJobId, "completed", {
+            expectFrom: "running",
+        });
+        logJobEvent({
+            event: "completed",
+            jobId: activeJobId,
+            chatId,
+            requestId: doneRow.request_id,
+            buildSha: doneRow.build_sha,
+            state: "completed",
+            model: doneRow.model,
+            modelEffective: doneRow.model_effective,
+            toolCallsCount: doneRow.tool_calls_count,
+            durationMs: doneRow.started_at
+                ? Date.now() - new Date(doneRow.started_at).getTime()
+                : null,
+        });
+        devLog("[chat/stream] job completed", { jobId: activeJobId });
 
         devLog("[chat/stream] LLM stream finished", {
             fullTextLen: fullText?.length ?? 0,
@@ -706,7 +904,31 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                 .eq("id", chatId);
         }
     } catch (err) {
+        // Sprint 1: persist the terminal state in the job entity too.
+        // Guarded: never overwrite a state that already moved on.
+        const safeFailJob = async (state: "failed" | "cancelled", reason: "user_cancelled" | null, message?: string) => {
+            if (!analysisJob) return;
+            try {
+                const current = await getAnalysisJob(db, analysisJob.id);
+                if (!current || ["completed", "failed", "cancelled", "paused"].includes(current.state)) return;
+                await transitionAnalysisJob(db, analysisJob.id, state, {
+                    finalReason: reason,
+                    errorMessage: message ?? null,
+                });
+                logJobEvent({
+                    event: state === "cancelled" ? "cancelled" : "failed",
+                    jobId: analysisJob.id,
+                    chatId,
+                    state,
+                    finalReason: reason,
+                    errorMessage: message ?? null,
+                });
+            } catch (jobErr) {
+                console.error("[chat/stream] failed to persist job state", safeErrorLog(jobErr));
+            }
+        };
         if (isAbortError(err)) {
+            await safeFailJob("cancelled", "user_cancelled");
             devLog("[chat/stream] client aborted stream", { chatId });
             if (err instanceof AssistantStreamError) {
                 const partial = buildCancelledAssistantMessage({
@@ -748,6 +970,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         }
         console.error("[chat/stream] error:", safeErrorLog(err));
         const message = userFacingLlmError(err, "Stream error");
+        await safeFailJob("failed", null, message);
         const errorEvents = err instanceof AssistantStreamError
             ? stripTransientAssistantEvents(err.events)
             : [{ type: "error" as const, message }];

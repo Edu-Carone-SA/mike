@@ -979,6 +979,8 @@ export async function streamChat(payload: {
     chat_id?: string;
     project_id?: string;
     model?: string;
+    /** Sprint 1: resume the same paused analysis job (its checkpoints). */
+    resume_job_id?: string;
     attached_documents?: { filename: string; document_id: string }[];
     ask_inputs_response?: {
         responses: (

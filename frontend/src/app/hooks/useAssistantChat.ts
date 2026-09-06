@@ -98,6 +98,7 @@ export function useAssistantChat({
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const eventsRef = useRef<AssistantEvent[]>([]);
+  const latestJobIdRef = useRef<string | null>(null);
 
   const updateLatestAssistantMessage = (
     updater: (message: Message) => Message,
@@ -272,6 +273,8 @@ export function useAssistantChat({
         AssistantEvent,
         { type: "ask_inputs_response" }
       >;
+      /** Sprint 1: resume a paused job (Termine a tarefa). */
+      resumeJobId?: string;
     },
   ): Promise<string | null> => {
     if (!message.content.trim()) return null;
@@ -383,6 +386,7 @@ export function useAssistantChat({
             messages: apiMessages,
             chat_id: chatId,
             model,
+            resume_job_id: opts?.resumeJobId,
             attached_documents:
               attachedDocs.length > 0 ? attachedDocs : undefined,
             ask_inputs_response: opts?.askInputsResponse,
@@ -422,6 +426,44 @@ export function useAssistantChat({
               streamedChatId = data.chatId;
               setChatId(data.chatId);
               setCurrentChatId(data.chatId);
+              continue;
+            }
+
+            if (data.type === "job_status") {
+              // Sprint 1: track the server-side analysis job state so the
+              // UI never shows "Completed" for a paused/cancelled job.
+              if (typeof data.jobId === "string") {
+                latestJobIdRef.current = data.jobId;
+              }
+              continue;
+            }
+
+            if (data.type === "paused") {
+              // Sprint 1: typed terminal event — the tool budget was
+              // exhausted. Show resume options instead of an error.
+              clearStreamingPlaceholders();
+              finalizeStreamingContent();
+              finalizeStreamingReasoning();
+              const message =
+                typeof data.message === "string"
+                  ? data.message
+                  : "Análise pausada: limite de etapas desta execução atingido.";
+              eventsRef.current = [
+                ...eventsRef.current,
+                {
+                  type: "job_paused",
+                  reason: typeof data.reason === "string" ? data.reason : "tool_budget",
+                  jobId: latestJobIdRef.current ?? undefined,
+                  message,
+                } as AssistantEvent,
+              ];
+              const snapshot = [...eventsRef.current];
+              updateLatestAssistantMessage((assistantMessage) => ({
+                ...assistantMessage,
+                events: snapshot,
+              }));
+              setIsResponseLoading(false);
+              setIsLoadingCitations(false);
               continue;
             }
 
@@ -1334,6 +1376,20 @@ export function useAssistantChat({
     return newChatId;
   };
 
+  /**
+   * Sprint 1 — "Termine a tarefa": resume the same paused job. Reuses the
+   * existing chat and checkpoints; new batches are numbered after the
+   * previous run so no completed block is repeated.
+   */
+  const resumeJob = async (jobId: string) => {
+    const prompt =
+      "Termine a tarefa anterior de onde parou, sem repetir as partes já concluídas.";
+    await handleChat(
+      { role: "user", content: prompt },
+      { resumeJobId: jobId },
+    );
+  };
+
   return {
     messages,
     isResponseLoading,
@@ -1344,5 +1400,6 @@ export function useAssistantChat({
     setMessages,
     cancel,
     chatId,
+    resumeJob,
   };
 }
