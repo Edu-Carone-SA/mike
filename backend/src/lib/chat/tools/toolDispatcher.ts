@@ -1551,12 +1551,26 @@ export async function runToolCalls(
               error: result.error,
             })}\n\n`,
           );
+          // QA INT-02: an integrity-blocked edit is TERMINAL for the
+          // model — retrying the same structural edit can never succeed.
+          // The result says so explicitly so the model stops retrying and
+          // reports the block to the user instead of looping.
+          const integrityBlocked = result.error?.includes(
+            "draft-integrity check",
+          );
           toolResults.push({
             role: "tool",
             tool_call_id: tc.id,
             content: JSON.stringify({
               ok: false,
               error: result.error,
+              ...(integrityBlocked
+                ? {
+                    non_retryable: true,
+                    next_required_action:
+                      "This edit is blocked by the draft-integrity check and retrying it will always fail. Do NOT call edit_document again with this or equivalent structural edits. Instead, tell the user in PT-BR exactly which structural content the edit would lose (from the error above) and that the document was left unchanged.",
+                  }
+                : {}),
             }),
           });
         }
