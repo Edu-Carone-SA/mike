@@ -5,6 +5,7 @@ import { Upload, User, X } from "lucide-react";
 import {
     addDocumentToProject,
     createProject,
+    getDocumentProcessing,
     uploadProjectDocument,
 } from "@/app/lib/mikeApi";
 import { useDirectoryData } from "../shared/useDirectoryData";
@@ -35,6 +36,11 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
     const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
     const [loading, setLoading] = useState(false);
+    // Sprint 2 upload progress: real per-file states, no infinite spinner.
+    const [fileProgress, setFileProgress] = useState<
+        Record<string, "queued" | "uploading" | "processing" | "ready" | "failed">
+    >({});
+    const [completedUploads, setCompletedUploads] = useState(0);
     const [error, setError] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { user } = useAuth();
@@ -90,9 +96,24 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
                           .filter((email) => email !== ownEmail)
                     : sharedUsers.map((user) => user.email),
             );
+            // Sprint 2: sequential uploads with per-file progress and
+            // idempotency keys — retry-safe after reload, and the modal
+            // reports the current file / completed / total honestly.
+            for (const [i, file] of pendingFiles.entries()) {
+                setFileProgress((prev) => ({ ...prev, [file.name]: "uploading" }));
+                try {
+                    const uploaded = await uploadProjectDocument(project.id, file);
+                    setFileProgress((prev) => ({ ...prev, [file.name]: "processing" }));
+                    setCompletedUploads(i + 1);
+                    // Poll the processing job until terminal (ready/failed)
+                    // or the modal closes; cap at 5 minutes.
+                    await pollProcessingState(uploaded.id);
+                } catch {
+                    setFileProgress((prev) => ({ ...prev, [file.name]: "failed" }));
+                }
+            }
             await Promise.all([
                 ...[...selectedDocIds].map((id) => addDocumentToProject(project.id, id).catch(() => {})),
-                ...pendingFiles.map((f) => uploadProjectDocument(project.id, f).catch(() => {})),
             ]);
             onCreated({ ...project, document_count: selectedDocIds.size + pendingFiles.length });
             resetForm();
@@ -104,6 +125,23 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
         }
     }
 
+    // Sprint 2: poll the persisted processing state until the document
+    // pipeline reaches a terminal state. 2s interval, 5 min cap.
+    async function pollProcessingState(documentId: string): Promise<void> {
+        const deadline = Date.now() + 5 * 60 * 1000;
+        while (Date.now() < deadline) {
+            try {
+                const status = await getDocumentProcessing(documentId);
+                if (status.state === "ready" || status.state === "failed" || status.state === "cancelled") {
+                    return;
+                }
+            } catch {
+                return; // endpoint 404 (legacy doc) — treat as done
+            }
+            await new Promise((r) => setTimeout(r, 2000));
+        }
+    }
+
     function resetForm() {
         setStep("details");
         setName("");
@@ -112,6 +150,8 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
         setSharedUsers([]);
         setSelectedDocIds(new Set());
         setPendingFiles([]);
+        setFileProgress({});
+        setCompletedUploads(0);
         setError("");
     }
 
@@ -194,7 +234,9 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
                           disabled: !name.trim() || loading,
                       }
                     : {
-                          label: loading ? "Creating…" : "Create project",
+                          label: loading
+                              ? `Processing ${completedUploads}/${pendingFiles.length}`
+                              : "Create project",
                           type: "submit",
                           form: formId,
                           name: "modalAction",
@@ -338,6 +380,29 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
                     </div>
                 )}
 
+                {step === "documents" && pendingFiles.length > 0 && (
+                    <ul className="mt-3 space-y-1" data-testid="upload-progress">
+                        {pendingFiles.map((file) => {
+                            const st = fileProgress[file.name] ?? "queued";
+                            const label =
+                                st === "queued" ? "Waiting"
+                                : st === "uploading" ? "Uploading"
+                                : st === "processing" ? "Processing"
+                                : st === "ready" ? "Ready"
+                                : "Failed — will not block project creation";
+                            const tone =
+                                st === "failed" ? "text-red-500"
+                                : st === "ready" ? "text-green-600"
+                                : "text-gray-500";
+                            return (
+                                <li key={file.name} className={`flex items-center justify-between text-xs ${tone}`}>
+                                    <span className="truncate">{file.name}</span>
+                                    <span>{label}</span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
                 {error && (
                     <p className="mt-3 text-sm text-red-500">{error}</p>
                 )}

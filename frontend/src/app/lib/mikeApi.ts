@@ -821,6 +821,32 @@ export async function uploadStandaloneDocument(
     return response.json() as Promise<Document>;
 }
 
+export interface DocumentProcessingStatus {
+    jobId: string;
+    documentId: string | null;
+    projectId: string | null;
+    state: string;
+    processingState: string;
+    failureReason: string | null;
+    fileName: string | null;
+    pagesProcessed: number;
+    pagesTotal: number | null;
+    attempt: number;
+    maxAttempts: number;
+    startedAt: string | null;
+    finishedAt: string | null;
+    updatedAt: string;
+}
+
+// Sprint 2: persisted processing status for a document's pipeline job.
+export async function getDocumentProcessing(
+    documentId: string,
+): Promise<DocumentProcessingStatus> {
+    return apiRequest<DocumentProcessingStatus>(
+        `/single-documents/${documentId}/processing`,
+    );
+}
+
 export async function listStandaloneDocuments(): Promise<Document[]> {
     return apiRequest<Document[]>("/single-documents");
 }
