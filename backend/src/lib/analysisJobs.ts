@@ -299,3 +299,51 @@ export function toJobStatusPayload(row: AnalysisJobRow): JobStatusPayload {
     finalReason: row.final_reason ?? undefined,
   };
 }
+
+/**
+ * Sprint 1 — structured job lifecycle telemetry for CloudWatch, in the
+ * same key=value format as logLlmCall so Logs Insights queries can join
+ * on request_id / job_id. Emitted on every terminal transition and on
+ * each tool-batch checkpoint.
+ */
+export function logJobEvent(
+  fields: {
+    event: "checkpoint" | "completed" | "failed" | "cancelled" | "paused" | "resumed";
+    jobId: string;
+    chatId?: string | null;
+    requestId?: string | null;
+    buildSha?: string | null;
+    state: JobState;
+    finalReason?: FinalReason | null;
+    model?: string | null;
+    modelEffective?: string | null;
+    toolCallsCount?: number | null;
+    tokensIn?: number | null;
+    tokensOut?: number | null;
+    checkpointId?: string | null;
+    durationMs?: number | null;
+    errorMessage?: string | null;
+  },
+): void {
+  const parts = [
+    `[job] event=${fields.event}`,
+    `job_id=${fields.jobId}`,
+  ];
+  if (fields.chatId) parts.push(`chat_id=${fields.chatId}`);
+  if (fields.requestId) parts.push(`request_id=${fields.requestId}`);
+  if (fields.buildSha) parts.push(`build_sha=${fields.buildSha}`);
+  parts.push(`state=${fields.state}`);
+  if (fields.finalReason) parts.push(`final_reason=${fields.finalReason}`);
+  if (fields.model) parts.push(`model=${fields.model}`);
+  if (fields.modelEffective) parts.push(`model_effective=${fields.modelEffective}`);
+  if (fields.toolCallsCount !== undefined && fields.toolCallsCount !== null)
+    parts.push(`tool_calls=${fields.toolCallsCount}`);
+  if (fields.tokensIn) parts.push(`tokens_in=${fields.tokensIn}`);
+  if (fields.tokensOut) parts.push(`tokens_out=${fields.tokensOut}`);
+  if (fields.checkpointId) parts.push(`checkpoint_id=${fields.checkpointId}`);
+  if (fields.durationMs !== undefined && fields.durationMs !== null)
+    parts.push(`duration_ms=${fields.durationMs}`);
+  if (fields.errorMessage)
+    parts.push(`error="${fields.errorMessage.replace(/"/g, "'").slice(0, 300)}"`);
+  console.log(parts.join(" "));
+}

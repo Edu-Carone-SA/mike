@@ -27,6 +27,7 @@ import {
   createAnalysisJob,
   getAnalysisJob,
   listCheckpoints,
+  logJobEvent,
   saveCheckpoint,
   toJobStatusPayload,
   transitionAnalysisJob,
@@ -736,6 +737,15 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                 finalReason: null,
             });
             resumedJob = true;
+            logJobEvent({
+                event: "resumed",
+                jobId: analysisJob.id,
+                chatId,
+                requestId: analysisJob.request_id,
+                buildSha: analysisJob.build_sha,
+                state: "running",
+                toolCallsCount: analysisJob.tool_calls_count,
+            });
             write(
                 `data: ${JSON.stringify({
                     type: "job_status",
@@ -796,6 +806,16 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                         checkpointId: checkpoint.id,
                         toolCallsCount: baseBatchIndex + info.batchIndex,
                     });
+                    logJobEvent({
+                        event: "checkpoint",
+                        jobId: activeJobId,
+                        chatId,
+                        requestId: analysisJob?.request_id ?? null,
+                        buildSha: analysisJob?.build_sha ?? null,
+                        state: "running",
+                        toolCallsCount: baseBatchIndex + info.batchIndex,
+                        checkpointId: checkpoint.id,
+                    });
                     write(
                         `data: ${JSON.stringify({
                             type: "job_status",
@@ -816,16 +836,42 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         // Persist terminal state in the job entity — never inferred from
         // tool-step wrappers. `paused` is resumable, not a failure.
         if (paused) {
-            await transitionAnalysisJob(db, activeJobId, "paused", {
+            const pausedRow = await transitionAnalysisJob(db, activeJobId, "paused", {
                 expectFrom: "running",
                 finalReason: "tool_budget",
                 errorMessage: "Tool budget exhausted; awaiting user action.",
             });
+            logJobEvent({
+                event: "paused",
+                jobId: activeJobId,
+                chatId,
+                requestId: pausedRow.request_id,
+                buildSha: pausedRow.build_sha,
+                state: "paused",
+                finalReason: "tool_budget",
+                model: pausedRow.model,
+                modelEffective: pausedRow.model_effective,
+                toolCallsCount: pausedRow.tool_calls_count,
+            });
             devLog("[chat/stream] job paused", { jobId: activeJobId, chatId });
             return;
         }
-        await transitionAnalysisJob(db, activeJobId, "completed", {
+        const doneRow = await transitionAnalysisJob(db, activeJobId, "completed", {
             expectFrom: "running",
+        });
+        logJobEvent({
+            event: "completed",
+            jobId: activeJobId,
+            chatId,
+            requestId: doneRow.request_id,
+            buildSha: doneRow.build_sha,
+            state: "completed",
+            model: doneRow.model,
+            modelEffective: doneRow.model_effective,
+            toolCallsCount: doneRow.tool_calls_count,
+            durationMs: doneRow.started_at
+                ? Date.now() - new Date(doneRow.started_at).getTime()
+                : null,
         });
         devLog("[chat/stream] job completed", { jobId: activeJobId });
 
@@ -866,6 +912,14 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                 const current = await getAnalysisJob(db, analysisJob.id);
                 if (!current || ["completed", "failed", "cancelled", "paused"].includes(current.state)) return;
                 await transitionAnalysisJob(db, analysisJob.id, state, {
+                    finalReason: reason,
+                    errorMessage: message ?? null,
+                });
+                logJobEvent({
+                    event: state === "cancelled" ? "cancelled" : "failed",
+                    jobId: analysisJob.id,
+                    chatId,
+                    state,
                     finalReason: reason,
                     errorMessage: message ?? null,
                 });
