@@ -17,7 +17,7 @@ import { caseLawRouter } from "./routes/caseLaw";
 import { adminRouter } from "./routes/admin";
 import { searchRouter } from "./routes/search";
 import { validateEnv, getEnv } from "./lib/env";
-import { checkSupabaseConnectivity } from "./lib/supabase";
+import { checkSupabaseConnectivity, createServerSupabase } from "./lib/supabase";
 import { checkStorageConnectivity } from "./lib/storage";
 
 // Validate environment at startup. Fails fast if required secrets are missing or unsafe.
@@ -194,6 +194,36 @@ app.get("/ready", async (_req, res) => {
     checkStorageConnectivity(),
   ]);
 
+  // Sprint 2 operational resilience: document pipeline backlog. Exposed so
+  // the ECS health check / uptime monitors can alert when the queue grows
+  // beyond the configured threshold (DOCUMENT_JOB_BACKLOG_ALERT, default 20).
+  let documentJobBacklog: number | null = null;
+  let documentJobOldestQueuedSeconds: number | null = null;
+  if (supabase) {
+    try {
+      const db = createServerSupabase();
+      const { data: queued } = await db
+        .from("document_jobs")
+        .select("created_at")
+        .eq("state", "queued");
+      if (queued && queued.length > 0) {
+        documentJobBacklog = queued.length;
+        const oldest = new Date(queued[0].created_at).getTime();
+        documentJobOldestQueuedSeconds = Math.max(
+          0,
+          Math.round((Date.now() - oldest) / 1000),
+        );
+      } else {
+        documentJobBacklog = 0;
+      }
+    } catch {
+      documentJobBacklog = null; // DB unreachable — connectivity check reports
+    }
+  }
+  const backlogAlertThreshold = envInt("DOCUMENT_JOB_BACKLOG_ALERT", 20);
+  const backlogAlert =
+    documentJobBacklog !== null && documentJobBacklog > backlogAlertThreshold;
+
   const ready = supabase && storage;
   const status = ready ? 200 : 503;
 
@@ -203,6 +233,12 @@ app.get("/ready", async (_req, res) => {
     checks: {
       supabase,
       storage,
+    },
+    document_pipeline: {
+      backlog: documentJobBacklog,
+      oldest_queued_seconds: documentJobOldestQueuedSeconds,
+      backlog_alert_threshold: backlogAlertThreshold,
+      backlog_alert: backlogAlert,
     },
     timestamp: new Date().toISOString(),
   });
