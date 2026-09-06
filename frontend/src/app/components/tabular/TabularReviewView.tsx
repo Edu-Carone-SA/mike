@@ -381,8 +381,21 @@ export function TRView({ reviewId, projectId }: Props) {
                 if (payload?.code === "missing_api_key" && provider) {
                     setApiKeyModalProvider(provider);
                 }
+                // Sprint 3: typed precondition failures with cause+action —
+                // never a bare status code.
+                const codeMessages: Record<string, string> = {
+                    no_documents_selected:
+                        "Nenhum documento selecionado nesta revisão. Abra 'Documents' e selecione os documentos antes de executar.",
+                    documents_access_denied:
+                        "Você não tem acesso a um ou mais documentos selecionados. Peça acesso ao dono ou remova o documento da revisão.",
+                    missing_api_key:
+                        payload?.detail ?? "Configure a API key do modelo para executar a revisão.",
+                };
+                const typed = payload?.code ? codeMessages[payload.code] : null;
                 throw new Error(
-                    payload?.detail ?? `Generation failed: ${response.status}`,
+                    typed ??
+                        payload?.detail ??
+                        `Generation failed: ${response.status}`,
                 );
             }
             if (!response.body) throw new Error("No body");

@@ -1766,7 +1766,7 @@ async function queryTabularAllColumns(
         })
         .join("\n");
 
-    const SYSTEM = `You are a legal document analyst. Extract information for each column listed below.
+    const SYSTEM = `You are a legal document analyst. Extract information for each column listed below. Write "summary" and "reasoning" in the same language as the document and the column prompts (Brazilian Portuguese documents → pt-BR, locale=pt-BR).
 
 For each column, output exactly one minified JSON object on its own line (no line breaks inside the JSON), then a newline. Process columns in order and output each result as soon as you finish it.
 
