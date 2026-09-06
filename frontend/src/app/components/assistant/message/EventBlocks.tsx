@@ -680,11 +680,13 @@ export function DocEditedBlock({
     showConnector,
     isStreaming,
     hasError,
+    errorMessage,
 }: {
     filename: string;
     showConnector?: boolean;
     isStreaming?: boolean;
     hasError?: boolean;
+    errorMessage?: string;
 }) {
     return (
         <EventBlock
@@ -696,6 +698,17 @@ export function DocEditedBlock({
                 {isStreaming ? "Editing" : hasError ? "Edit failed" : "Edited"}
             </span>{" "}
             <span>{isStreaming ? `${filename}...` : filename}</span>
+            {hasError && !isStreaming && errorMessage ? (
+                <span
+                    role="alert"
+                    className="ml-1 text-xs text-red-600"
+                    title={errorMessage}
+                >
+                    {errorMessage.includes("draft-integrity")
+                        ? "bloqueado pela verificação de integridade da minuta"
+                        : errorMessage}
+                </span>
+            ) : null}
         </EventBlock>
     );
 }
