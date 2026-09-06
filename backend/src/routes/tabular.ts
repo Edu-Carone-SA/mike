@@ -1814,7 +1814,7 @@ Rules:
     await Promise.all(pending);
 }
 
-async function extractDocumentMarkdown(
+export async function extractDocumentMarkdown(
     buf: ArrayBuffer,
     fileType: string | null | undefined,
 ): Promise<string> {
