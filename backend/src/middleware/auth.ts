@@ -151,6 +151,25 @@ export async function requireAuth(
 }
 
 /**
+ * Optional auth for routes where a signed artifact (e.g. a short-lived
+ * HMAC download token) is itself the authorization. When an Authorization
+ * header IS present it must be valid — a bad token is a 401, not a pass.
+ * When absent, the request proceeds anonymously and the route decides.
+ */
+export async function optionalAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const auth = req.headers.authorization ?? "";
+  if (!auth.startsWith("Bearer ")) {
+    next();
+    return;
+  }
+  await requireAuth(req, res, next);
+}
+
+/**
  * Require the authenticated user to have role === 'admin' in user_profiles.
  * Must be used after requireAuth (which sets res.locals.userId).
  */
