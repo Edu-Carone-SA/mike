@@ -11,6 +11,10 @@ import {
   type EditInput,
 } from "../../docxTrackedChanges";
 import { buildDownloadUrl } from "../../downloadTokens";
+import {
+    buildDocxManifest,
+    diffDocxManifests,
+} from "../../docxManifest";
 import { loadActiveVersion } from "../../documentVersions";
 import {
   type DocStore,
@@ -503,6 +507,27 @@ export async function generateDocx(
         };
       }
     }
+    // Sprint 4 — structural sanity of the generated minuta: at least one
+    // section, and if the title mentions contract/agreement/termo/contrato
+    // the body must carry a signature block. Checked in memory before the
+    // file is uploaded or any row is created.
+    const manifest = await buildDocxManifest(buf).catch(() => null);
+    if (!manifest || manifest.paragraphs === 0) {
+      return {
+        error:
+          "Generated document failed the structural sanity check (no body content). Nothing was published.",
+      };
+    }
+    const isContractLike = /contrat|agreement|termo|convênio|convenio|estatuto/i.test(
+      title,
+    );
+    if (isContractLike && manifest.signatures === 0) {
+      return {
+        error:
+          "Generated contract-like document has no signature block. Add a final signature section (By/Name/Title/Date) and regenerate. Nothing was published.",
+      };
+    }
+
     const docId = crypto.randomUUID().replace(/-/g, "");
     const safeTitle =
       title
@@ -1196,6 +1221,43 @@ export async function runEditDocument(params: {
       error:
         errors[0]?.reason ??
         "No edits could be applied. Refine context_before/context_after and retry.",
+    };
+  }
+
+  // Sprint 4 — draft integrity gate: compare the structural manifest of the
+  // CURRENT version with the EDITED candidate, fully in memory. A structural
+  // loss (dropped table/image/header/footer/annex/clause/signature block)
+  // blocks publication: nothing is uploaded, no version row is created, and
+  // the caller gets a readable technical error. This is what makes the edit
+  // atomic: the only persistent effect of a failed edit is nothing.
+  const integrity = await (async () => {
+    try {
+      const before = await buildDocxManifest(current.bytes);
+      const after = await buildDocxManifest(editedBytes);
+      return diffDocxManifests(before, after, {
+        // Text deletions the LLM explicitly requested may remove a clause
+        // heading. The requested deleted_text is not knowable here at
+        // heading granularity, so edits are conservatively allowed to drop
+        // clause NUMBERS only when they delete at least one paragraph of
+        // text. Structural parts (tables/images/headers/footers/annex
+        // headings/signature blocks) are never silently removable.
+        allowedClauseRemovals: undefined,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        losses: [`manifest_build_failed: ${String(err).slice(0, 160)}`],
+        additions: [],
+      } as const;
+    }
+  })();
+  if (!integrity.ok) {
+    return {
+      ok: false,
+      error:
+        `Edit blocked by draft-integrity check — the candidate version ` +
+        `would lose structural content: ${integrity.losses.join("; ")}. ` +
+        `Refine the edits so they only touch the intended sections.`,
     };
   }
 
