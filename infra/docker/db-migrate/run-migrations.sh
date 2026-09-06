@@ -9,8 +9,10 @@ set -eu
 export PGSSLMODE="${PGSSLMODE:-require}"
 
 # Tracking table so each migration runs exactly once, in lexical order.
+# NOTE: schema_migrations (knex-style, version varchar(14)) already exists
+# in this database — use a dedicated table to avoid touching it.
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q <<'SQL'
-CREATE TABLE IF NOT EXISTS public.schema_migrations (
+CREATE TABLE IF NOT EXISTS public.mike_schema_migrations (
   filename text PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now()
 );
@@ -28,7 +30,7 @@ for FILE in /migrations/*.sql; do
   NAME=$(basename "$FILE")
 
   ALREADY=$(psql "$DATABASE_URL" -t -A -c \
-    "SELECT count(*) FROM public.schema_migrations WHERE filename = '$NAME';")
+    "SELECT count(*) FROM public.mike_schema_migrations WHERE filename = '$NAME';")
   if [ "$ALREADY" != "0" ]; then
     echo "=== Skip (already applied): $NAME ==="
     continue
@@ -37,14 +39,14 @@ for FILE in /migrations/*.sql; do
   if [ "$NAME" \< "20260713" ]; then
     echo "=== Baseline (schema already live, marking applied): $NAME ==="
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c \
-      "INSERT INTO public.schema_migrations (filename) VALUES ('$NAME');"
+      "INSERT INTO public.mike_schema_migrations (filename) VALUES ('$NAME');"
     continue
   fi
 
   echo "=== Applying migration: $NAME ==="
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$FILE"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c \
-    "INSERT INTO public.schema_migrations (filename) VALUES ('$NAME');"
+    "INSERT INTO public.mike_schema_migrations (filename) VALUES ('$NAME');"
   APPLIED=$((APPLIED + 1))
 done
 
