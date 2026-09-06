@@ -74,7 +74,7 @@ export const PdfView = React.memo(function PdfView({
     const [currentPage, setCurrentPage] = useState(1);
     const [numPages, setNumPages] = useState(0);
 
-    const { result, loading, error } = useFetchSingleDoc(
+    const { result, loading, error, retry } = useFetchSingleDoc(
         doc?.document_id ?? null,
         doc?.version_id ?? null,
     );
@@ -575,8 +575,21 @@ export const PdfView = React.memo(function PdfView({
                     </div>
                 )}
                 {error && (
-                    <div className="flex h-full items-center justify-center">
-                        <p className="text-sm text-red-500">{error}</p>
+                    <div
+                        role="alert"
+                        data-testid="pdf-load-error"
+                        className="flex h-full flex-col items-center justify-center gap-3 px-6"
+                    >
+                        <p className="text-sm text-red-500 text-center">
+                            {error}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={retry}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                            Tentar novamente
+                        </button>
                     </div>
                 )}
                 <div ref={containerRef} />
