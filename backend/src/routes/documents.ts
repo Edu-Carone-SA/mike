@@ -26,6 +26,7 @@ import {
 import { ensureDocAccess } from "../lib/access";
 import {
   createDocumentJob,
+  getDocumentJobByIdempotencyKey,
   logDocumentJobEvent,
   toDocumentJobStatusPayload,
 } from "../lib/documentJobs";
@@ -1436,6 +1437,42 @@ async function handleDocumentUpload(
       });
 
   const content = file.buffer;
+
+  // Sprint 2 fix (Sprint 3 QA): dedupe BEFORE creating the document row.
+  // A retried upload with the same idempotency key used to create a SECOND
+  // document (the job was deduped, the document was not) — the project list
+  // showed N+1 files after a reload-retry. If the existing job already has
+  // a document, return it with the existing job status instead.
+  const dedupeKey =
+    (req.headers["x-idempotency-key"] as string | undefined)?.trim() || null;
+  if (dedupeKey) {
+    const existingJob = await getDocumentJobByIdempotencyKey(
+      db,
+      userId,
+      dedupeKey,
+    );
+    if (existingJob?.document_id) {
+      const { data: existingDoc } = await db
+        .from("documents")
+        .select("*")
+        .eq("id", existingJob.document_id)
+        .single();
+      if (existingDoc) {
+        logDocumentJobEvent({
+          event: "upload_deduped",
+          jobId: existingJob.id,
+          documentId: existingJob.document_id,
+          projectId: existingJob.project_id,
+          state: existingJob.state,
+        });
+        return void res.status(200).json({
+          ...existingDoc,
+          processing_job: toDocumentJobStatusPayload(existingJob),
+        });
+      }
+    }
+  }
+
   const { data: doc, error: insertErr } = await db
     .from("documents")
     .insert({
