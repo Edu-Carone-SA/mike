@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import { createServerSupabase } from "../lib/supabase";
+import { extractDocumentMarkdown } from "./tabular";
 import {
   buildContentDisposition,
   downloadFile,
@@ -140,7 +141,33 @@ documentsRouter.get("/:documentId", requireAuth, async (req, res) => {
   await attachLatestVersionNumbers(db, docs);
   await attachActiveVersionPaths(db, docs);
 
-  res.json(docs[0]);
+  // QA Onda 7 (observability): 'ready' + content: null gave API clients no way
+  // to tell whether a document is actually analysable by Tabular Review.
+  // Expose an explicit analysis readiness indicator using the same extraction
+  // pipeline /generate relies on.
+  const docWithMeta = docs[0] as {
+    storage_path?: string | null;
+    file_type?: string | null;
+  } & Record<string, unknown>;
+  let analysis_ready = false;
+  let extracted_text_length = 0;
+  if (typeof docWithMeta.storage_path === "string" && docWithMeta.storage_path) {
+    try {
+      const buf = await downloadFile(docWithMeta.storage_path);
+      if (buf) {
+        const markdown = await extractDocumentMarkdown(
+          buf,
+          typeof docWithMeta.file_type === "string" ? docWithMeta.file_type : "",
+        );
+        extracted_text_length = markdown.trim().length;
+        analysis_ready = extracted_text_length > 0;
+      }
+    } catch {
+      // Extraction failures leave analysis_ready=false — same signal the
+      // tabular run would surface as an error cell.
+    }
+  }
+  res.json({ ...docWithMeta, analysis_ready, extracted_text_length });
 });
 
 // GET /single-documents/:documentId/display
