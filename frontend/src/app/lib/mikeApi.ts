@@ -767,6 +767,20 @@ export async function deleteDocumentVersion(
     });
 }
 
+/**
+ * Sprint 2: stable idempotency key for an upload. Derived from the
+ * file's identity (name+size+mtime) and the destination, so a retry
+ * after navigation/reload never duplicates the document.
+ */
+export function uploadIdempotencyKey(
+    file: File,
+    scope: string,
+): string {
+    const lastModified =
+        file.lastModified > 0 ? file.lastModified : Date.now();
+    return `upload:${scope}:${file.name}:${file.size}:${lastModified}`;
+}
+
 export async function uploadProjectDocument(
     projectId: string,
     file: File,
@@ -778,7 +792,10 @@ export async function uploadProjectDocument(
         `${API_BASE}/projects/${projectId}/documents`,
         {
             method: "POST",
-            headers: { ...authHeaders },
+            headers: {
+                ...authHeaders,
+                "X-Idempotency-Key": uploadIdempotencyKey(file, projectId),
+            },
             body: form,
         },
     );
@@ -794,7 +811,10 @@ export async function uploadStandaloneDocument(
     form.append("file", file);
     const response = await fetch(`${API_BASE}/single-documents`, {
         method: "POST",
-        headers: { ...authHeaders },
+        headers: {
+            ...authHeaders,
+            "X-Idempotency-Key": uploadIdempotencyKey(file, "standalone"),
+        },
         body: form,
     });
     if (!response.ok) throw new Error(await response.text());
