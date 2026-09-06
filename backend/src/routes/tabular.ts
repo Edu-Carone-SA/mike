@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { requireAuth } from "../middleware/auth";
 import { createServerSupabase } from "../lib/supabase";
 import { downloadFile } from "../lib/storage";
@@ -779,7 +780,22 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
     // QA TAB-002 (Onda 5): every Run click that reaches the backend must be
     // observable. CloudWatch proved the QA's instrumented click never hit
     // this route (the only run_started was from the page-load GET).
-    console.log("[tabular/generate] run_started", { reviewId, userId });
+    // Sprint 3: stable key=value lines with correlation ids (request/run),
+    // and terminal run_completed / run_failed on every exit path.
+    const runId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    const runLog = (event: string, extra: Record<string, unknown> = {}) =>
+        console.log(
+            [
+                `[tabular-run] event=${event}`,
+                `run_id=${runId}`,
+                `request_id=${requestId}`,
+                `review_id=${reviewId}`,
+                `user_id=${userId}`,
+                ...Object.entries(extra).map(([k, v]) => `${k}=${v}`),
+            ].join(" "),
+        );
+    runLog("run_started");
 
     const { data: review, error: reviewError } = await db
         .from("tabular_reviews")
@@ -853,8 +869,27 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
     );
 
     const { tabular_model, api_keys } = await getUserModelSettings(userId, db);
+    // Sprint 3 (política de modelo): resolveModel already sanitizes legacy
+    // invalid values to the default — surface the decision so it is never
+    // silent, and log the effective model for the run.
+    const { data: profileForModel } = await db
+        .from("user_profiles")
+        .select("tabular_model")
+        .eq("user_id", userId)
+        .single();
+    const storedTabularModel = (profileForModel as { tabular_model?: string | null })
+        ?.tabular_model;
+    if (storedTabularModel && storedTabularModel !== tabular_model) {
+        runLog("model_sanitized", {
+            stored_model: storedTabularModel,
+            effective_model: tabular_model,
+            reason: "legacy_invalid_model",
+        });
+    }
+    runLog("model_resolved", { model: tabular_model });
     const missingKey = missingModelApiKey(tabular_model, api_keys);
     if (missingKey) {
+        runLog("run_failed", { reason: "missing_api_key", model: tabular_model });
         return void res.status(422).json({
             code: "missing_api_key",
             ...missingKey,
@@ -1009,8 +1044,16 @@ tabularRouter.post("/:reviewId/generate", requireAuth, async (req, res) => {
             }),
         );
 
+        runLog("run_completed", {
+            documents: docs.length,
+            columns: columns.length,
+        });
         write("data: [DONE]\n\n");
     } catch (err) {
+        runLog("run_failed", {
+            reason: "stream_error",
+            error: String(safeErrorLog(err)).slice(0, 200),
+        });
         console.error("[tabular/generate] stream error", safeErrorLog(err));
         try {
             write(
