@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/app/lib/supabase";
 
 /**
@@ -31,6 +31,19 @@ export function useFetchSingleDoc(
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const prevKeyRef = useRef<string | null>(null);
+    // QA VIEW-LOAD-001: a 30 MB scanned PDF kept the viewer spinner for
+    // 86+ seconds with no error and no retry. Give the byte fetch a hard
+    // deadline; expose a typed error the viewer can retry.
+    const LOAD_TIMEOUT_MS = 60_000;
+    const [retryTick, setRetryTick] = useState(0);
+
+    // QA VIEW-LOAD-001: after a timeout/error the user must be able to
+    // retry the same document. Clears the dedup key so the effect below
+    // re-runs the fetch.
+    const retry = useCallback(() => {
+        prevKeyRef.current = null;
+        setRetryTick((t) => t + 1);
+    }, []);
 
     useEffect(() => {
         if (!documentId) return;
@@ -64,6 +77,10 @@ export function useFetchSingleDoc(
                         headers: token
                             ? { Authorization: `Bearer ${token}` }
                             : {},
+                        // Abort the whole request — headers AND body —
+                        // when the deadline passes, so arrayBuffer()
+                        // below cannot hang on a stalled 30 MB download.
+                        signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
                     },
                 );
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -84,8 +101,19 @@ export function useFetchSingleDoc(
                     await response.arrayBuffer().catch(() => {});
                     if (!cancelled) setResult({ type: "docx" });
                 }
-            } catch {
-                if (!cancelled) setError("Failed to load document.");
+            } catch (err) {
+                if (!cancelled) {
+                    if (
+                        err instanceof DOMException &&
+                        err.name === "TimeoutError"
+                    ) {
+                        setError(
+                            "O download do documento excedeu 60 segundos e foi cancelado. Documentos escaneados muito grandes podem demorar — tente novamente.",
+                        );
+                    } else {
+                        setError("Failed to load document.");
+                    }
+                }
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -95,7 +123,7 @@ export function useFetchSingleDoc(
             cancelled = true;
             prevKeyRef.current = null;
         };
-    }, [documentId, versionId]);
+    }, [documentId, versionId, retryTick]);
 
-    return { result, loading, error };
+    return { result, loading, error, retry };
 }
