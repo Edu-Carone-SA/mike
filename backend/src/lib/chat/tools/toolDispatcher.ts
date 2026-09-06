@@ -480,6 +480,19 @@ export async function runToolCalls(
     {
       casesByClusterId: new Map(),
     };
+  // QA JOB-02: the model regenerated the same named artifact ("Documento
+  // Gerado.xlsx") five times in one exhausted tool loop. Within a single
+  // turn, a generate_* call with the same normalized title returns the
+  // artifact already created instead of publishing a duplicate document.
+  const generatedArtifactsByTitle = new Map<
+    string,
+    Record<string, unknown>
+  >();
+  const turnArtifactKey = (kind: string, title: unknown) =>
+    `${kind}::${String(title ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ")}`;
   const groupedFindInCaseSearches = toolCalls
     .filter((tc) => tc.function.name === COURTLISTENER_TOOL_NAMES.findInCase)
     .map((tc) => {
@@ -509,6 +522,15 @@ export async function runToolCalls(
     previewFilename: string,
     fileType: string,
   ) => {
+    // Turn-scoped dedup cache (QA JOB-02): remember successful
+    // generations so a same-titled generate_* call reuses this artifact.
+    if ("filename" in result && !("error" in result)) {
+      const title = (tc as { __title?: unknown }).__title ?? previewFilename;
+      generatedArtifactsByTitle.set(
+        turnArtifactKey(fileType, String(title).replace(/\.[a-z0-9]+$/i, "")),
+        { ...result },
+      );
+    }
     let newDocLabel: string | null = null;
     if ("filename" in result && "download_url" in result) {
       const dlFilename = result.filename as string;
@@ -1798,11 +1820,27 @@ export async function runToolCalls(
       }
     } else if (tc.function.name === "generate_docx") {
       const title = args.title as string;
+      const cachedArtifact = generatedArtifactsByTitle.get(
+        turnArtifactKey("docx", title),
+      );
+      if (cachedArtifact) {
+        devLog("[generate_docx] duplicate title in same turn — reusing artifact");
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ...cachedArtifact,
+            message: `Document '${cachedArtifact.filename ?? title}' was already generated in this turn. Reuse the existing document; do not generate it again.`,
+          }),
+        });
+        continue;
+      }
       const landscape = !!args.landscape;
       devLog(
         `[generate_docx] title="${title}" landscape=${landscape} args.landscape=${args.landscape}`,
       );
       const previewFilename = safeGeneratedFilename(title, "docx");
+      (tc as { __title?: unknown }).__title = title;
       write(
         `data: ${JSON.stringify({ type: "doc_created_start", filename: previewFilename })}\n\n`,
       );
@@ -1821,8 +1859,24 @@ export async function runToolCalls(
       );
     } else if (tc.function.name === "generate_excel") {
       const title = semanticGeneratedTitle(args.title, args.sheets as unknown[]);
+      const cachedArtifact = generatedArtifactsByTitle.get(
+        turnArtifactKey("xlsx", title),
+      );
+      if (cachedArtifact) {
+        devLog("[generate_excel] duplicate title in same turn — reusing artifact");
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ...cachedArtifact,
+            message: `Document '${cachedArtifact.filename ?? title}' was already generated in this turn. Reuse the existing document; do not generate it again.`,
+          }),
+        });
+        continue;
+      }
       devLog(`[generate_excel] title="${title}"`);
       const previewFilename = safeGeneratedFilename(title, "xlsx");
+      (tc as { __title?: unknown }).__title = title;
       write(
         `data: ${JSON.stringify({ type: "doc_created_start", filename: previewFilename })}\n\n`,
       );
@@ -1841,8 +1895,24 @@ export async function runToolCalls(
       );
     } else if (tc.function.name === "generate_ppt") {
       const title = args.title as string;
+      const cachedArtifact = generatedArtifactsByTitle.get(
+        turnArtifactKey("pptx", title),
+      );
+      if (cachedArtifact) {
+        devLog("[generate_ppt] duplicate title in same turn — reusing artifact");
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ...cachedArtifact,
+            message: `Document '${cachedArtifact.filename ?? title}' was already generated in this turn. Reuse the existing document; do not generate it again.`,
+          }),
+        });
+        continue;
+      }
       devLog(`[generate_ppt] title="${title}"`);
       const previewFilename = safeGeneratedFilename(title, "pptx");
+      (tc as { __title?: unknown }).__title = title;
       write(
         `data: ${JSON.stringify({ type: "doc_created_start", filename: previewFilename })}\n\n`,
       );

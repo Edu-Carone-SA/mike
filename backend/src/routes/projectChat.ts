@@ -22,6 +22,14 @@ import {
     getUserModelSettings,
 } from "../lib/userSettings";
 import { checkProjectAccess } from "../lib/access";
+import {
+    buildTurnPlan,
+    finalizeJobAfterStream,
+    safeFailJob,
+    startOrResumeJob,
+    JobAbortSignal,
+} from "../lib/chat/chatJobRunner";
+import { saveCheckpoint, transitionAnalysisJob } from "../lib/analysisJobs";
 import { safeErrorLog, safeErrorMessage, userFacingLlmError } from "../lib/safeError";
 
 const PROJECT_SYSTEM_PROMPT_EXTRA = `PROJECT CONTEXT:
@@ -46,6 +54,7 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         displayed_doc,
         attached_documents,
         ask_inputs_response,
+        resume_job_id,
     } =
         req.body as {
             messages: ChatMessage[];
@@ -54,6 +63,7 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             displayed_doc?: { filename: string; document_id: string };
             attached_documents?: { filename: string; document_id: string }[];
             ask_inputs_response?: unknown;
+            resume_job_id?: string;
         };
     const askInputsResponse = parseAskInputsResponsePayload(
         ask_inputs_response,
@@ -208,6 +218,29 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
 
     const workflowStore = await buildWorkflowStore(userId, userEmail, db);
 
+    // Sprint 1 orchestration (QA JOB-02): deterministic plan before any
+    // tool fires — one section per attached document plus a mandatory
+    // final synthesis section.
+    const analysisPlan = buildTurnPlan(attached_documents);
+    if (attached_documents?.length) {
+        const planLines = analysisPlan.sections.map(
+            (s) =>
+                `${s.index}. ${s.label}${s.document_id ? "" : " (obrigatória ao final)"}`,
+        );
+        systemPromptExtra =
+            (systemPromptExtra ? systemPromptExtra + "\n\n" : "") +
+            `PLANO DE ANÁLISE DESTA EXECUÇÃO (siga esta ordem, seção por seção, antes de responder):\n` +
+            planLines.join("\n") +
+            `\nAo esgotar o orçamento de ferramentas, produza a síntese final com o que já foi lido e declare explicitamente qualquer seção pendente. A seção final de síntese é obrigatória.`;
+    }
+    const requestedToolBudget = Number(
+        (req.body as { tool_budget?: number }).tool_budget,
+    );
+    const toolBudget =
+        Number.isFinite(requestedToolBudget) && requestedToolBudget >= 1
+            ? Math.floor(requestedToolBudget)
+            : undefined;
+
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -233,10 +266,33 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         }
     }, 15000);
 
+    let analysisJobId: string | null = null;
     try {
         write(`data: ${JSON.stringify({ type: "chat_id", chatId })}\n\n`);
 
-        const { events, citations } = await runLLMStream({
+        // Sprint 1 orchestration (QA JOB-02): the project chat now runs
+        // the same analysis-job lifecycle as the standalone chat — job
+        // up front, plan before tools, checkpoints per tool batch, typed
+        // pause on tool-budget exhaustion and resume on the same job.
+        const resumeJobId =
+            typeof resume_job_id === "string" && resume_job_id.trim()
+                ? resume_job_id.trim()
+                : null;
+        const { job, priorBatches } = await startOrResumeJob({
+            db,
+            userId,
+            chatId,
+            projectId,
+            model: model ?? null,
+            kind: "chat_analysis",
+            resumeJobId,
+            analysisPlan,
+            write,
+        });
+        analysisJobId = job.id;
+        const baseBatchIndex = priorBatches;
+
+        const { events, citations, paused } = await runLLMStream({
             apiMessages,
             docStore,
             docIndex,
@@ -250,7 +306,49 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             apiKeys,
             signal: streamAbort.signal,
             projectId,
+            job: {
+                maxToolIterations: toolBudget,
+                onToolBatchEnd: async (info) => {
+                    const checkpoint = await saveCheckpoint(db, {
+                        jobId: job.id,
+                        sectionIndex: baseBatchIndex + info.batchIndex,
+                        sectionLabel: info.toolNames.join(", ").slice(0, 200),
+                        status: "completed",
+                        toolsUsed: info.toolNames,
+                    });
+                    await transitionAnalysisJob(db, job.id, "running", {
+                        checkpointId: checkpoint.id,
+                        toolCallsCount: baseBatchIndex + info.batchIndex,
+                    });
+                    write(
+                        `data: ${JSON.stringify({
+                            type: "job_status",
+                            jobId: job.id,
+                            state: "running",
+                            progress: {
+                                completedSections: info.batchIndex,
+                                totalSections: 0,
+                                currentLabel: info.toolNames.join(", "),
+                            },
+                            checkpointId: checkpoint.id,
+                        })}\n\n`,
+                    );
+                },
+            },
         });
+
+        // Persist the terminal state in the job entity (never inferred
+        // from tool-step wrappers). `paused` is resumable, not a failure.
+        await finalizeJobAfterStream({
+            db,
+            job,
+            chatId,
+            paused: !!paused,
+            write,
+        });
+        if (paused) {
+            return;
+        }
 
         const persistedEvents = stripTransientAssistantEvents(events);
         if (askInputsResponse) {
@@ -276,10 +374,22 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
                 .eq("id", chatId);
         }
     } catch (err) {
+        if (err instanceof JobAbortSignal) {
+            // startOrResumeJob already wrote the typed SSE error + [DONE].
+            return;
+        }
         if (isAbortError(err)) {
             console.log("[project-chat/stream] client aborted stream", {
                 chatId,
             });
+            if (analysisJobId) {
+                await safeFailJob(
+                    db,
+                    analysisJobId,
+                    "cancelled",
+                    "user_cancelled",
+                );
+            }
             if (err instanceof AssistantStreamError) {
                 const partial = buildCancelledAssistantMessage({
                     fullText: err.fullText,
@@ -319,6 +429,15 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             return;
         }
         console.error("[project-chat/stream] error:", safeErrorLog(err));
+        if (analysisJobId) {
+            await safeFailJob(
+                db,
+                analysisJobId,
+                "failed",
+                null,
+                userFacingLlmError(err, "Stream error"),
+            );
+        }
         const message = userFacingLlmError(err, "Stream error");
         const errorEvents = err instanceof AssistantStreamError
             ? stripTransientAssistantEvents(err.events)
