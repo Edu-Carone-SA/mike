@@ -196,6 +196,12 @@ export async function runLLMStream(params: {
     jobId?: string;
     /** Latest checkpoint id at pause time, if any. */
     checkpointId?: () => string | null;
+    /**
+     * JOB-02: true when the client sent an explicit tool_budget — the
+     * budget becomes a hard cap (deterministic pause on exhaustion,
+     * no synthesis-reserve call).
+     */
+    hardToolBudget?: boolean;
   };
 }): Promise<{
   fullText: string;
@@ -388,6 +394,8 @@ export async function runLLMStream(params: {
       messages: chatMessages,
       tools: activeTools as OpenAIToolSchema[],
       maxIterations: job?.maxToolIterations ?? 10,
+      // JOB-02: explicit client budget = deterministic pause on exhaustion.
+      hardToolBudget: job?.hardToolBudget === true,
       apiKeys,
       enableThinking: false,
       abortSignal: signal,

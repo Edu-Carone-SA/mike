@@ -312,6 +312,7 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             job: {
                 jobId: job.id,
                 maxToolIterations: toolBudget,
+                hardToolBudget: toolBudget !== undefined,
                 checkpointId: () => latestCheckpointId,
                 onToolBatchEnd: async (info) => {
                     const checkpoint = await saveCheckpoint(db, {

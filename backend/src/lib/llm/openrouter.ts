@@ -608,7 +608,9 @@ export async function streamOpenRouter(
       // exhaustion — spend ONE final call (no tools) asking the model to
       // synthesize the accumulated work into a final response. Only if
       // that is impossible does the loop count as exhausted (pause).
-      if (iter === maxIter - 1) {
+      // JOB-02: an explicit client tool_budget is a hard cap — pause
+      // deterministically so QA can force and observe the typed pause.
+      if (iter === maxIter - 1 && !params.hardToolBudget) {
         const toolResultMessages = results.map((result) => ({
           role: "tool" as const,
           content: result.content,
