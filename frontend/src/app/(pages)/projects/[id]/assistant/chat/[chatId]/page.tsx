@@ -267,7 +267,12 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         saveChat,
         renameChat: renameChatInHistory,
     } = useChatHistoryContext();
-    const [initialMessages] = useState<Message[]>(newChatMessages ?? []);
+    // [initialMessages] is a mount-time snapshot; the standalone chat page
+    // reads the LIVE context value instead. With a snapshot, a workflow
+    // wizard handoff (setNewChatMessages -> router.push) that lands AFTER
+    // this component's first render never triggers the auto-send and the
+    // chat stays empty forever (TAB-07). Read the live value.
+    const [initialMessages] = useState<Message[]>([]);
     const {
         messages,
         isResponseLoading,
@@ -289,12 +294,6 @@ export default function ProjectAssistantChatPage({ params }: Props) {
             })
             .catch(() => {});
     }, [projectId, isResponseLoading]);
-    const pendingInitialUserMessageRef = useRef<Message | null>(
-        initialMessages.length === 1 && initialMessages[0].role === "user"
-            ? initialMessages[0]
-            : null,
-    );
-
     const hasLoaded = useRef(false);
     const hasAutoSent = useRef(false);
     const hasInitialScrolled = useRef(false);
@@ -383,19 +382,22 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     }, [chats, chatId]);
 
     useEffect(() => {
-        const pendingMessage = pendingInitialUserMessageRef.current;
+        // Live context read (TAB-07): a wizard handoff sets newChatMessages
+        // and pushes to this route; the snapshot+ref pattern missed late
+        // handoffs. Mirrors the standalone chat page's working logic.
         if (
-            pendingMessage &&
+            newChatMessages &&
+            newChatMessages.length === 1 &&
+            newChatMessages[0].role === "user" &&
             !hasAutoSent.current &&
             !isResponseLoading &&
             messages.length === 1
         ) {
             hasAutoSent.current = true;
-            pendingInitialUserMessageRef.current = null;
             setNewChatMessages(null);
-            void handleChat(pendingMessage);
+            void handleChat(newChatMessages[0]);
         }
-    }, [messages.length, isResponseLoading, handleChat, setNewChatMessages]);
+    }, [newChatMessages, messages.length, isResponseLoading, handleChat, setNewChatMessages]);
 
     const scrollLatestUserToTop = useCallback(() => {
         requestAnimationFrame(() => {
