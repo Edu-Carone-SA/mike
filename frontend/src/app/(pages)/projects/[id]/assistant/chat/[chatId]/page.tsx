@@ -267,12 +267,11 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         saveChat,
         renameChat: renameChatInHistory,
     } = useChatHistoryContext();
-    // [initialMessages] is a mount-time snapshot; the standalone chat page
-    // reads the LIVE context value instead. With a snapshot, a workflow
-    // wizard handoff (setNewChatMessages -> router.push) that lands AFTER
-    // this component's first render never triggers the auto-send and the
-    // chat stays empty forever (TAB-07). Read the live value.
-    const [initialMessages] = useState<Message[]>([]);
+    // [TAB-07] The wizard sets newChatMessages in the context right before
+    // router.push-ing here. Read it LIVE (like the standalone chat page):
+    // useAssistantChat seeds its initial state from this value on the
+    // first render, so a handoff that landed before mount is displayed.
+    const initialMessages = newChatMessages ?? [];
     const {
         messages,
         isResponseLoading,
@@ -366,6 +365,14 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     useEffect(() => {
         if (hasLoaded.current) return;
         hasLoaded.current = true;
+        // [TAB-07] A wizard handoff seeds this chat's first message — skip
+        // the history fetch entirely (mirrors the standalone page): the chat
+        // row is fresh, and a late getChat resolving after the stream
+        // persisted the user message could clobber the in-flight turn.
+        if (newChatMessages && newChatMessages.length > 0) {
+            setChatLoaded(true);
+            return;
+        }
         getChat(chatId)
             .then(({ chat, messages: loaded }) => {
                 setChatTitle(chat.title);
@@ -382,16 +389,19 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     }, [chats, chatId]);
 
     useEffect(() => {
-        // Live context read (TAB-07): a wizard handoff sets newChatMessages
-        // and pushes to this route; the snapshot+ref pattern missed late
-        // handoffs. Mirrors the standalone chat page's working logic.
+        // [TAB-07] Wizard handoff auto-send. `messages` is seeded from
+        // newChatMessages (live read above), so it starts at length 1 when
+        // the handoff landed before mount. The `handleChat` appends the
+        // user message to the turn when it is not already the last one,
+        // so we do NOT gate on messages.length — only on "we haven't sent
+        // yet and nothing is in flight". This is the fix for the guard
+        // that was impossible to satisfy after the seeding was removed.
         if (
             newChatMessages &&
             newChatMessages.length === 1 &&
             newChatMessages[0].role === "user" &&
             !hasAutoSent.current &&
-            !isResponseLoading &&
-            messages.length === 1
+            !isResponseLoading
         ) {
             hasAutoSent.current = true;
             setNewChatMessages(null);
