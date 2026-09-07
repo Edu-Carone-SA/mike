@@ -51,6 +51,12 @@ export type StreamChatParams = {
     messages: LlmMessage[];
     tools?: OpenAIToolSchema[];
     maxIterations?: number;
+    /**
+     * JOB-02: when true (client sent an explicit tool_budget), hitting
+     * maxIterations with pending tool calls pauses the job deterministically
+     * — no synthesis-reserve call. Default runs keep the reserve.
+     */
+    hardToolBudget?: boolean;
     callbacks?: StreamCallbacks;
     runTools?: (calls: NormalizedToolCall[]) => Promise<NormalizedToolResult[]>;
     apiKeys?: UserApiKeys;
