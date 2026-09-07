@@ -1224,6 +1224,47 @@ export async function runEditDocument(params: {
     };
   }
 
+  // INT-01 material gate: verify the CANDIDATE docx (accepted view —
+  // normal runs + w:ins, w:del invisible) actually materializes every
+  // requested substitution. The LLM emits find/replace pairs; a
+  // mis-anchored pair can compose a materially wrong value (e.g.
+  // "180.000,00"→"190.000,00" landing as "1980.000,00") and still
+  // produce perfectly valid w:ins/w:del markup. Publishing such a
+  // version is corruption for a legal product: block before upload.
+  // Two conditions per substitution, checked on the ORIGINAL edit
+  // (the collapsed AppliedChange loses the full strings):
+  //   1. the replace text must be present in the accepted candidate;
+  //   2. an occurrence of the find text must have been consumed.
+  const sq = (s: string) => s.replace(/\s+/g, " ");
+  const candidateText = sq(await extractDocxBodyText(editedBytes));
+  const beforeText = sq(await extractDocxBodyText(current.bytes));
+  const countOccurrences = (hay: string, needle: string) =>
+    needle ? hay.split(needle).length - 1 : 0;
+  for (const edit of edits) {
+    const find = sq(edit.find ?? "");
+    const replace = sq(edit.replace ?? "");
+    if (!replace || !find || find === replace) continue;
+    if (!candidateText.includes(replace)) {
+      return {
+        ok: false,
+        error:
+          `Edit blocked by material check — the candidate version does not ` +
+          `contain the requested replacement "${replace.slice(0, 60)}". ` +
+          `Refine the edit so the substitution lands exactly as requested.`,
+      };
+    }
+    if (countOccurrences(beforeText, find) <= countOccurrences(candidateText, find)) {
+      return {
+        ok: false,
+        error:
+          `Edit blocked by material check — the candidate version still ` +
+          `contains the original text "${find.slice(0, 60)}" that the edit ` +
+          `was supposed to replace. Refine context_before/context_after so ` +
+          `the substitution replaces the old text.`,
+      };
+    }
+  }
+
   // Sprint 4 — draft integrity gate: compare the structural manifest of the
   // CURRENT version with the EDITED candidate, fully in memory. A structural
   // loss (dropped table/image/header/footer/annex/clause/signature block)
