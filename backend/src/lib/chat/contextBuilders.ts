@@ -342,10 +342,25 @@ export function buildCancelledAssistantMessage(args: {
   fullText: string;
   events: AssistantEvent[];
   buildCitations: (fullText: string, events: AssistantEvent[]) => unknown[];
+  /**
+   * JOB-02: when present, replaces the terminal "cancelled" event with a
+   * typed, resumable pause (client disconnect) instead of "cancelled by
+   * user" — the reloaded page renders Retomar análise on the same job.
+   */
+  pauseOverride?: {
+    type: "job_paused";
+    reason: string;
+    jobId?: string;
+    message: string;
+  };
 }) {
-  const events = appendCancelledAssistantEvent(
-    stripTransientAssistantEvents(args.events),
-  );
+  const stripped = stripTransientAssistantEvents(args.events);
+  const terminal = args.pauseOverride ?? {
+    type: "cancelled" as const,
+    reason: "user_cancelled",
+    at: new Date().toISOString(),
+  };
+  const events = [...stripped, terminal];
   return {
     events,
     citations: args.buildCitations(args.fullText, events),

@@ -291,6 +291,9 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         });
         analysisJobId = job.id;
         const baseBatchIndex = priorBatches;
+        // JOB-02: latest checkpoint id — surfaced in the typed pause event so
+        // the client can resume the same job with a visible cursor.
+        let latestCheckpointId: string | null = null;
 
         const { events, citations, paused } = await runLLMStream({
             apiMessages,
@@ -307,7 +310,9 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             signal: streamAbort.signal,
             projectId,
             job: {
+                jobId: job.id,
                 maxToolIterations: toolBudget,
+                checkpointId: () => latestCheckpointId,
                 onToolBatchEnd: async (info) => {
                     const checkpoint = await saveCheckpoint(db, {
                         jobId: job.id,
@@ -316,6 +321,7 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
                         status: "completed",
                         toolsUsed: info.toolNames,
                     });
+                    latestCheckpointId = checkpoint.id;
                     await transitionAnalysisJob(db, job.id, "running", {
                         checkpointId: checkpoint.id,
                         toolCallsCount: baseBatchIndex + info.batchIndex,
@@ -347,6 +353,34 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             write,
         });
         if (paused) {
+            // JOB-02: persist the pause as a typed assistant event so it
+            // survives reload — the resume button reads jobId from THIS
+            // message, not from the (gone) SSE stream.
+            const pausedEvents = [
+                ...stripTransientAssistantEvents(events),
+                {
+                    type: "job_paused" as const,
+                    reason: "tool_budget",
+                    jobId: job.id,
+                    message:
+                        "Análise pausada: o orçamento de etapas desta execução foi atingido. Você pode retomar, reduzir o escopo ou solicitar um resultado parcial.",
+                },
+            ];
+            if (askInputsResponse) {
+                await appendAssistantEventsToLastAssistantMessage(
+                    db,
+                    chatId,
+                    pausedEvents,
+                    [],
+                );
+            } else {
+                await db.from("chat_messages").insert({
+                    chat_id: chatId,
+                    role: "assistant",
+                    content: pausedEvents,
+                    citations: null,
+                });
+            }
             return;
         }
 
@@ -397,11 +431,21 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
                 );
             }
             if (err instanceof AssistantStreamError) {
+                // JOB-02: persist the disconnect as a typed, resumable
+                // pause (not "cancelled by user") so the reloaded page
+                // renders the Retomar análise button on the same job.
                 const partial = buildCancelledAssistantMessage({
                     fullText: err.fullText,
                     events: err.events,
                     buildCitations: (fullText, events) =>
                         extractCitations(fullText, docIndex, events),
+                    pauseOverride: {
+                        type: "job_paused" as const,
+                        reason: "client_disconnected",
+                        jobId: analysisJobId ?? undefined,
+                        message:
+                            "Análise pausada: a conexão foi interrompida. Você pode retomar de onde parou.",
+                    },
                 });
                 const saveError = askInputsResponse
                     ? null

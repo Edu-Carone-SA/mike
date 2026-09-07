@@ -688,6 +688,49 @@ projectsRouter.post(
 // it doesn't have to filter the global GET /chat list — and so collaborators
 // see each other's chats inside the project even though those don't appear
 // in the global list.
+// JOB-02 observability: GET /projects/:projectId/jobs lists analysis jobs
+// for the project's chats (id, state, final_reason, checkpoint, timestamps)
+// so QA and the UI can discover a paused job after a reload without having
+// captured the SSE job_status events.
+projectsRouter.get(
+  "/:projectId/jobs",
+  requireAuth,
+  async (req, res) => {
+    const userId = res.locals.userId as string;
+    const userEmail = res.locals.userEmail as string | undefined;
+    const { projectId } = req.params;
+    const db = createServerSupabase();
+
+    const access = await checkProjectAccess(projectId, userId, userEmail, db);
+    if (!access.ok)
+      return void res.status(404).json({ detail: "Project not found" });
+
+    // Only jobs whose chat belongs to this project.
+    const { data: chatIds, error: chatErr } = await db
+      .from("chats")
+      .select("id")
+      .eq("project_id", projectId);
+    if (chatErr)
+      return void res.status(500).json({ detail: "Failed to list jobs" });
+    if (!chatIds || chatIds.length === 0) return void res.json([]);
+
+    const { data: jobs, error: jobsErr } = await db
+      .from("analysis_jobs")
+      .select(
+        "id,state,final_reason,checkpoint_id,tool_calls_count,created_at,updated_at,chat_id",
+      )
+      .in(
+        "chat_id",
+        chatIds.map((c) => c.id),
+      )
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (jobsErr)
+      return void res.status(500).json({ detail: "Failed to list jobs" });
+    return void res.json(jobs ?? []);
+  },
+);
+
 projectsRouter.get("/:projectId/chats", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
   const userEmail = res.locals.userEmail as string | undefined;
