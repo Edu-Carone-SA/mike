@@ -940,6 +940,52 @@ export async function handleDocumentUpload(
 
   const content = file.buffer;
 
+  // DOC-04/XC-01 (Sprint 4 QA round 3): an idempotency-key dedupe alone
+  // misses the UI path where the user re-uploads the SAME file through
+  // Add Documents after a download/copy changed its mtime (new key,
+  // materialized as a second homonymous row in the project). Dedupe on
+  // the project-scoped file identity instead: same project + filename +
+  // size → return the existing document (HTTP 200), never a second row.
+  // filename lives on document_versions, so resolve candidates via the
+  // current version of each document in the project.
+  if (projectId) {
+    const { data: projectDocs } = await db
+      .from("documents")
+      .select("id, current_version_id")
+      .eq("project_id", projectId)
+      .eq("user_id", userId)
+      .limit(200);
+    const currentVersionIds = (projectDocs ?? [])
+      .map((d) => d.current_version_id)
+      .filter((id): id is string => typeof id === "string");
+    if (currentVersionIds.length > 0) {
+      const { data: versionRows } = await db
+        .from("document_versions")
+        .select("document_id, filename, size_bytes")
+        .in("id", currentVersionIds)
+        .ilike("filename", filename);
+      const duplicate = (versionRows ?? []).find(
+        (v) => v.size_bytes === content.byteLength,
+      );
+      if (duplicate) {
+        const { data: full } = await db
+          .from("documents")
+          .select("*")
+          .eq("id", duplicate.document_id)
+          .single();
+        if (full) {
+          logDocumentJobEvent({
+            event: "upload_deduped_by_project_file_identity",
+            documentId: duplicate.document_id,
+            projectId,
+            state: full.status,
+          });
+          return void res.status(200).json(full);
+        }
+      }
+    }
+  }
+
   // Sprint 2 fix (Sprint 3 QA): dedupe BEFORE creating the document row.
   // A retried upload with the same idempotency key used to create a SECOND
   // document (the job was deduped, the document was not) — the project list
