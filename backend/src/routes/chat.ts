@@ -738,15 +738,16 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     res.on("close", () => {
         if (!streamFinished) {
             streamAbort.abort();
-            // Sprint 1: client disconnected mid-stream — cancel the job
-            // best-effort (fire-and-forget; guarded against races).
+            // JOB-02: a reload disconnects the SSE mid-run. Pause instead
+            // of cancel so the user can resume the same job_id — the
+            // partial work is not lost (startOrResumeJob accepts `paused`).
             if (analysisJob) {
                 void (async () => {
                     try {
                         const current = await getAnalysisJob(db, analysisJob.id);
                         if (current && !["completed", "failed", "cancelled", "paused"].includes(current.state)) {
-                            await transitionAnalysisJob(db, analysisJob.id, "cancelled", {
-                                finalReason: "user_cancelled",
+                            await transitionAnalysisJob(db, analysisJob.id, "paused", {
+                                finalReason: "client_disconnected",
                             });
                         }
                     } catch {
@@ -993,7 +994,7 @@ chatRouter.post("/", requireAuth, async (req, res) => {
     } catch (err) {
         // Sprint 1: persist the terminal state in the job entity too.
         // Guarded: never overwrite a state that already moved on.
-        const safeFailJob = async (state: "failed" | "cancelled", reason: "user_cancelled" | null, message?: string) => {
+        const safeFailJob = async (state: "failed" | "cancelled" | "paused", reason: "user_cancelled" | "client_disconnected" | null, message?: string) => {
             if (!analysisJob) return;
             try {
                 const current = await getAnalysisJob(db, analysisJob.id);
@@ -1015,7 +1016,8 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             }
         };
         if (isAbortError(err)) {
-            await safeFailJob("cancelled", "user_cancelled");
+            // JOB-02: client abort = resumable pause, not terminal cancel.
+            await safeFailJob("paused", "client_disconnected");
             devLog("[chat/stream] client aborted stream", { chatId });
             if (err instanceof AssistantStreamError) {
                 const partial = buildCancelledAssistantMessage({

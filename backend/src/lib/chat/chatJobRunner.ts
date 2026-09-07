@@ -239,14 +239,15 @@ export async function finalizeJobAfterStream(params: {
 }
 
 /**
- * Safe terminal transition for the catch path: never overwrite a state
- * that already moved on (completed/failed/cancelled/paused are final).
+ * Safe transition for the catch path: never overwrite a state that
+ * already moved on. `paused` here means "client disconnected mid-run"
+ * (JOB-02) — resumable on the same job_id, unlike terminal states.
  */
 export async function safeFailJob(
     db: Db,
     jobId: string,
-    state: "failed" | "cancelled",
-    reason: "user_cancelled" | null,
+    state: "failed" | "cancelled" | "paused",
+    reason: "user_cancelled" | "client_disconnected" | null,
     message?: string,
 ): Promise<void> {
     try {
