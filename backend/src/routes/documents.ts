@@ -301,6 +301,81 @@ documentsRouter.get("/:documentId/display", requireAuth, async (req, res) => {
   }
 });
 
+// POST /single-documents/:documentId/reprocess
+// QA PIPE-02 / DOC-01 (NO-GO report): legacy documents uploaded before
+// Sprint 2 have no document_jobs row and no extracted_text, so they are
+// permanently "pending_extraction" with no path forward. This endpoint
+// enqueues a fresh processing job for the CURRENT version through the
+// normal Sprint 2 pipeline (extraction/OCR) — idempotent while a job is
+// in flight.
+documentsRouter.post(
+  "/:documentId/reprocess",
+  requireAuth,
+  async (req, res) => {
+    const userId = res.locals.userId as string;
+    const { documentId } = req.params;
+    const db = createServerSupabase();
+
+    const { data: doc } = await db
+      .from("documents")
+      .select("id, user_id, project_id, current_version_id")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (!doc || doc.user_id !== userId) {
+      return void res.status(404).json({ detail: "Document not found." });
+    }
+    if (!doc.current_version_id) {
+      return void res
+        .status(409)
+        .json({ detail: "Document has no current version." });
+    }
+
+    const { data: version } = await db
+      .from("document_versions")
+      .select("filename, file_type, size_bytes")
+      .eq("id", doc.current_version_id)
+      .single();
+
+    // One in-flight job per document: reuse a queued/uploading/extracting
+    // or ocr/indexing job that is still active.
+    const { data: activeJob } = await db
+      .from("document_jobs")
+      .select("*")
+      .eq("document_id", documentId)
+      .in("state", ["queued", "uploading", "extracting", "ocr", "indexing"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (activeJob) {
+      return void res
+        .status(200)
+        .json({ processing_job: toDocumentJobStatusPayload(activeJob) });
+    }
+
+    const { job: processingJob } = await createDocumentJob(db, {
+      userId,
+      idempotencyKey: `reprocess:${documentId}:${doc.current_version_id}`,
+      projectId: doc.project_id ?? null,
+      documentId,
+      fileName: version?.filename ?? null,
+      fileType: version?.file_type ?? null,
+      sizeBytes: version?.size_bytes ?? null,
+      requestId: crypto.randomUUID(),
+      buildSha: process.env.COMMIT_SHA ?? null,
+    });
+    logDocumentJobEvent({
+      event: "reprocess_requested",
+      jobId: processingJob.id,
+      documentId,
+      projectId: doc.project_id ?? null,
+      state: processingJob.state,
+    });
+    return void res
+      .status(202)
+      .json({ processing_job: toDocumentJobStatusPayload(processingJob) });
+  },
+);
+
 // POST /single-documents/download-zip
 documentsRouter.post("/download-zip", requireAuth, async (req, res) => {
   const userId = res.locals.userId as string;
