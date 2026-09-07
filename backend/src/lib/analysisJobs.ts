@@ -28,6 +28,7 @@ export type FinalReason =
   | "timeout"
   | "upstream_rate_limit"
   | "user_cancelled"
+  | "client_disconnected"
   | "validation_failed";
 
 export type JobProgress = {

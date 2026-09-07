@@ -383,11 +383,17 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
                 chatId,
             });
             if (analysisJobId) {
+                // JOB-02: a reload disconnects the SSE mid-run. Treating
+                // that as terminal `cancelled` loses the partial work and
+                // makes the job unresumable (startOrResumeJob only accepts
+                // `paused`). A client abort is a pause the user can resume
+                // on the same job_id — only a tool-budget pause or a
+                // failure is terminal.
                 await safeFailJob(
                     db,
                     analysisJobId,
-                    "cancelled",
-                    "user_cancelled",
+                    "paused",
+                    "client_disconnected",
                 );
             }
             if (err instanceof AssistantStreamError) {
