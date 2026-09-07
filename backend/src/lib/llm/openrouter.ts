@@ -610,7 +610,11 @@ export async function streamOpenRouter(
       // that is impossible does the loop count as exhausted (pause).
       // JOB-02: an explicit client tool_budget is a hard cap — pause
       // deterministically so QA can force and observe the typed pause.
-      if (iter === maxIter - 1 && !params.hardToolBudget) {
+      if (iter === maxIter - 1 && params.hardToolBudget) {
+        exhaustedToolLoop = true;
+        break;
+      }
+      if (iter === maxIter - 1) {
         const toolResultMessages = results.map((result) => ({
           role: "tool" as const,
           content: result.content,
