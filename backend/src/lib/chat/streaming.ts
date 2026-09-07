@@ -46,6 +46,13 @@ import {
 export type AssistantEvent =
   | { type: "reasoning"; text: string }
   | { type: "cancelled"; reason: string; at: string }
+  | {
+      /** JOB-02: persisted typed pause — resumable on the same job_id. */
+      type: "job_paused";
+      reason: string;
+      jobId?: string;
+      message: string;
+    }
   | AskInputsEvent
   | {
       type: "ask_inputs_response";
@@ -181,6 +188,14 @@ export async function runLLMStream(params: {
       fullText: string;
       events: AssistantEvent[];
     }) => Promise<void>;
+    /**
+     * JOB-02: emitted inside the typed pause event so the client (and the
+     * persisted message) can resume the SAME job without scraping
+     * job_status events. Optional to keep existing callers compatible.
+     */
+    jobId?: string;
+    /** Latest checkpoint id at pause time, if any. */
+    checkpointId?: () => string | null;
   };
 }): Promise<{
   fullText: string;
@@ -595,6 +610,8 @@ export async function runLLMStream(params: {
         `data: ${JSON.stringify({
           type: "paused",
           reason: "tool_budget",
+          jobId: job.jobId,
+          checkpointId: job.checkpointId?.() ?? null,
           completedBatches: batchIndex,
           message:
             "Análise pausada: o orçamento de etapas desta execução foi atingido. Você pode retomar, reduzir o escopo ou solicitar um resultado parcial.",

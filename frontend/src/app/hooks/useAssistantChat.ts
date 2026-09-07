@@ -449,12 +449,18 @@ export function useAssistantChat({
                 typeof data.message === "string"
                   ? data.message
                   : "Análise pausada: limite de etapas desta execução atingido.";
+              // JOB-02: the paused event itself carries the jobId (and no
+              // job_status may have arrived before a reload) — prefer it.
+              const jobId =
+                typeof data.jobId === "string" && data.jobId
+                  ? data.jobId
+                  : latestJobIdRef.current ?? undefined;
               eventsRef.current = [
                 ...eventsRef.current,
                 {
                   type: "job_paused",
                   reason: typeof data.reason === "string" ? data.reason : "tool_budget",
-                  jobId: latestJobIdRef.current ?? undefined,
+                  jobId,
                   message,
                 } as AssistantEvent,
               ];
