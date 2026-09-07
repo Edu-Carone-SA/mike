@@ -102,6 +102,13 @@ interface Props {
      * resume_job_id so the SAME job (and its checkpoints) continues.
      */
     onResumeJob?: (jobId: string) => void;
+    /**
+     * QA UX-STATE-02: current state by job id (from GET /projects/:id/jobs
+     * and live job_status SSE). A resume button is only rendered while the
+     * job is paused (or unknown); terminal jobs hide it even if a historic
+     * job_paused event is present.
+     */
+    jobStates?: Record<string, string>;
 }
 
 export function AssistantMessage({
@@ -125,6 +132,7 @@ export function AssistantMessage({
     isEditReloading,
     resolvedEditStatuses,
     onResumeJob,
+    jobStates,
 }: Props) {
     const contentDivRef = useRef<HTMLDivElement | null>(null);
     const [isCopied, setIsCopied] = useState(false);
@@ -371,18 +379,29 @@ export function AssistantMessage({
             );
         }
         if (event.type === "job_paused") {
+            // QA UX-STATE-02: only offer resume while the job is actually
+            // paused. After a successful resume the job reaches completed —
+            // the historic job_paused event stays (it is the pause record)
+            // but the button must not.
+            const jobState = event.jobId
+                ? jobStates?.[event.jobId]
+                : undefined;
+            const canResume =
+                event.jobId != null &&
+                onResumeJob != null &&
+                (jobState === undefined || jobState === "paused");
             return (
                 <EventBlock key={globalIdx} showConnector={showConnector}>
                     <span className="font-medium text-amber-600">
                         Análise pausada
                     </span>
                     <p className="mt-1 text-sm text-gray-600">{event.message}</p>
-                    {event.jobId && onResumeJob && (
+                    {canResume && (
                         <button
                             type="button"
                             data-testid="resume-job-button"
                             className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
-                            onClick={() => onResumeJob(event.jobId!)}
+                            onClick={() => onResumeJob!(event.jobId!)}
                         >
                             Retomar análise
                         </button>
@@ -812,6 +831,24 @@ export function AssistantMessage({
                             // in exhaustedToolLoop the backend appends an
                             // error event in a separate group; the tool-step
                             // groups would otherwise still read "Completed".
+                            // QA UX-STATE-02: a job_paused group is "Pausado",
+                            // not "Completed" — unless the job has since moved
+                            // on (resumed and completed/failed/cancelled).
+                            const groupPausedJobId = (
+                                g.events.find(
+                                    (event) =>
+                                        event.type === "job_paused" &&
+                                        typeof event.jobId === "string",
+                                ) as
+                                    | { jobId: string }
+                                    | undefined
+                            )?.jobId;
+                            const pausedJobState = groupPausedJobId
+                                ? jobStates?.[groupPausedJobId]
+                                : undefined;
+                            const jobHasMovedOn =
+                                pausedJobState !== undefined &&
+                                pausedJobState !== "paused";
                             const terminalState = messageCancelled
                                 ? "cancelled" as const
                                 : messageFailed
@@ -826,7 +863,14 @@ export function AssistantMessage({
                                                   event.type === "error",
                                           )
                                       ? "failed" as const
-                                      : "completed" as const;
+                                      : g.events.some(
+                                                (event) =>
+                                                    event.type ===
+                                                    "job_paused",
+                                            ) &&
+                                          !jobHasMovedOn
+                                        ? "paused" as const
+                                        : "completed" as const;
                             return (
                                 <PreResponseWrapper
                                     key={`p-${g.indices[0]}`}

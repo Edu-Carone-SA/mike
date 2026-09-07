@@ -14,7 +14,7 @@ export function PreResponseWrapper({
 }: {
     children: React.ReactNode;
     /** Terminal state of this group's run: derived from its events. */
-    terminalState?: "completed" | "failed" | "cancelled";
+    terminalState?: "completed" | "failed" | "cancelled" | "paused";
     stepCount: number;
     shouldMinimize: boolean;
     isStreaming: boolean;
@@ -45,13 +45,17 @@ export function PreResponseWrapper({
     // QA UX-STATE-01 (Onda 3): the label must reflect the terminal state of
     // the run, not just that streaming ended. A run that ends in an error or
     // cancellation is 'Failed'/'Cancelled', never 'Completed'.
+    // QA UX-STATE-02 (JOB-02 reaceite): a paused run is 'Pausado', never
+    // 'Completed' — the resume card renders below the wrapper.
     const label = isStreaming
         ? "Working"
         : terminalState === "cancelled"
           ? `Cancelled after ${stepCount} ${stepWord}`
           : terminalState === "failed"
             ? `Failed after ${stepCount} ${stepWord}`
-            : `Completed in ${stepCount} ${stepWord}`;
+            : terminalState === "paused"
+              ? `Pausado após ${stepCount} ${stepWord}`
+              : `Completed in ${stepCount} ${stepWord}`;
 
     const buttonTextClass = compact ? "text-xs" : "text-sm";
     const childrenGapClass = compact ? "gap-2.5" : "gap-4";

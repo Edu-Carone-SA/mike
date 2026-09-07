@@ -522,6 +522,26 @@ export async function getProject(projectId: string): Promise<Project> {
     return apiRequest<Project>(`/projects/${projectId}`);
 }
 
+/** JOB-02/UX-STATE-02: analysis jobs for the project's chats (id, state,
+ * final_reason, checkpoint…) — lets the UI hide resume buttons for jobs
+ * that already moved on to a terminal state. */
+export interface ProjectJob {
+    id: string;
+    state: string;
+    final_reason: string | null;
+    checkpoint_id: string | null;
+    tool_calls_count?: number;
+    created_at?: string;
+    updated_at?: string;
+    chat_id: string;
+}
+
+export async function getProjectJobs(
+    projectId: string,
+): Promise<ProjectJob[]> {
+    return apiRequest<ProjectJob[]>(`/projects/${projectId}/jobs`);
+}
+
 export async function updateProject(
     projectId: string,
     payload: {
