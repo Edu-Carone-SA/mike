@@ -67,18 +67,19 @@ export function UseWorkflowModal({ workflows, workflow, onClose, skipSelect = fa
             setSelected(workflow);
             setScreen(skipSelect ? "details" : "select");
             setListSearch("");
+            // Fresh configure state per workflow — but never reset while the
+            // user is merely navigating inside the same workflow.
+            resetConfigureState();
         } else {
             setSelected(null);
         }
-     
+
     }, [workflow?.id]);
 
-    // Reset configure state on back
-    useEffect(() => {
-        if (screen === "select") {
-            resetConfigureState();
-        }
-    }, [screen]);
+    // TAB-07: navigating back to the select screen must NOT wipe the
+    // configure state anymore — the user may just be peeking at another
+    // workflow and returning. Only a workflow CHANGE or an explicit close
+    // resets (see the effect above and handleClose).
 
     function resetConfigureState() {
         setInProject(false);
@@ -87,7 +88,26 @@ export function UseWorkflowModal({ workflows, workflow, onClose, skipSelect = fa
         setAssistantPrompt("");
     }
 
-    function handleClose() {
+    /** TAB-07: the wizard accumulates state (mode, project, prompt,
+     * selected documents). Closing it via overlay/X must not silently
+     * discard that — confirm first. Programmatic closes (after a
+     * successful start/review creation) bypass the guard. */
+    function isDirty() {
+        return (
+            inProject ||
+            selectedProjectId != null ||
+            selectedDocIds.size > 0 ||
+            assistantPrompt.trim().length > 0
+        );
+    }
+
+    function handleClose(force = false) {
+        if (!force && isDirty()) {
+            const discard = window.confirm(
+                "Descartar a configuração atual e fechar?",
+            );
+            if (!discard) return;
+        }
         setSelected(null);
         setScreen("select");
         resetConfigureState();
@@ -127,7 +147,7 @@ export function UseWorkflowModal({ workflows, workflow, onClose, skipSelect = fa
                     workflow: { id: wf.id, title: wf.metadata.title },
                 },
             ]);
-            handleClose();
+            handleClose(true);
             router.push(
                 projectId
                     ? `/projects/${projectId}/assistant/chat/${chatId}`
@@ -157,7 +177,7 @@ export function UseWorkflowModal({ workflows, workflow, onClose, skipSelect = fa
                 workflow_id: wf.is_system ? undefined : wf.id,
                 project_id: projectId,
             });
-            handleClose();
+            handleClose(true);
             router.push(
                 projectId
                     ? `/projects/${projectId}/tabular-reviews/${review.id}`
