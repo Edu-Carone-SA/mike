@@ -25,6 +25,7 @@ import {
     deleteDocument,
     getChat,
     getProject,
+    getProjectJobs,
     uploadProjectDocument,
     createProjectFolder,
     renameProjectFolder,
@@ -220,6 +221,10 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     const [chatLoaded, setChatLoaded] = useState(false);
     const [creatingChat, setCreatingChat] = useState(false);
     const [deletingChat, setDeletingChat] = useState(false);
+    // UX-STATE-02: current state of the project's analysis jobs, so a
+    // historic job_paused message only offers resume while the job is
+    // actually still paused.
+    const [jobStates, setJobStates] = useState<Record<string, string>>({});
 
     // Panel widths
     const [explorerWidth, setExplorerWidth] = useState(EXPLORER_DEFAULT);
@@ -271,6 +276,19 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         cancel,
         resumeJob,
     } = useAssistantChat({ initialMessages, chatId, projectId });
+
+    // UX-STATE-02: fetch the current state of the project's analysis jobs
+    // on load and whenever an assistant run finishes (a resume flips the
+    // job to running→completed — the historic pause card must follow).
+    useEffect(() => {
+        getProjectJobs(projectId)
+            .then((jobs) => {
+                const next: Record<string, string> = {};
+                for (const j of jobs) next[j.id] = j.state;
+                setJobStates(next);
+            })
+            .catch(() => {});
+    }, [projectId, isResponseLoading]);
     const pendingInitialUserMessageRef = useRef<Message | null>(
         initialMessages.length === 1 && initialMessages[0].role === "user"
             ? initialMessages[0]
@@ -1259,6 +1277,7 @@ export default function ProjectAssistantChatPage({ params }: Props) {
                                             onResumeJob={(jobId) =>
                                                 void resumeJob(jobId)
                                             }
+                                            jobStates={jobStates}
                                             isStreaming={
                                                 i === messages.length - 1 &&
                                                 isResponseLoading
