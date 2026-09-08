@@ -139,14 +139,31 @@ export function UseWorkflowModal({ workflows, workflow, onClose, skipSelect = fa
             const content = assistantPrompt.trim()
                 ? `implement workflow\n${assistantPrompt.trim()}`
                 : "implement workflow";
-            setNewChatMessages([
-                {
-                    role: "user",
-                    content,
-                    files: files.length > 0 ? files : undefined,
-                    workflow: { id: wf.id, title: wf.metadata.title },
-                },
-            ]);
+            const message = {
+                role: "user" as const,
+                content,
+                files: files.length > 0 ? files : undefined,
+                workflow: { id: wf.id, title: wf.metadata.title },
+            };
+            setNewChatMessages([message]);
+            // [TAB-07] Navigating into /projects/[id]/... performs a FULL
+            // DOCUMENT RELOAD in this app (verified via performance
+            // navigation entries: type "navigate" even for plain list →
+            // chat clicks), which destroys the React context — the
+            // standalone handoff works only because that route soft-
+            // navigates. Persist the pending message in sessionStorage
+            // (survives reload, scoped to this tab) keyed by the chat id;
+            // the project chat page consumes it on mount.
+            if (projectId) {
+                try {
+                    sessionStorage.setItem(
+                        "mike:pending-project-chat",
+                        JSON.stringify({ chatId, message }),
+                    );
+                } catch {
+                    // storage full/blocked — context fallback still applies
+                }
+            }
             handleClose(true);
             router.push(
                 projectId
