@@ -287,7 +287,6 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         } catch {
             return null;
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chatId]);
 
     const initialMessages =
