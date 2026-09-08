@@ -1,111 +1,124 @@
 import { describe, it, expect } from "vitest";
 
 /**
- * TAB-07 wizard→project-chat handoff — regression pin for the auto-send
- * guard that failed QA twice (rounds 3 and 4).
+ * TAB-07 wizard→project-chat handoff — regression pin.
  *
- * Round 3 (pre-#79): the page captured newChatMessages as a mount-time
- * snapshot; the effect's `messages.length === 1` guard could fail when
- * the handoff landed after first render.
- * Round 4 (#79): the seeding was removed but the `messages.length === 1`
- * guard stayed — messages starts at [] and NOTHING ever pushes to it
- * before the effect, so the guard became impossible to satisfy and the
- * auto-send never fired (QA: empty chat, zero POST).
+ * Rounds 3 and 4 failed QA with an empty chat after Start Chat. The final
+ * root cause (proven in-browser via a window probe + performance
+ * navigation entries): navigating into /projects/[id]/... performs a FULL
+ * DOCUMENT RELOAD ("navigate"), which destroys the React context the
+ * standalone handoff relies on. The standalone route soft-navigates, so
+ * it always worked.
  *
- * The contract under test (what the page now implements):
- *   1. `initialMessages` is read LIVE from the context
- *      (`newChatMessages ?? []`) on every render — a handoff that lands
- *      before mount seeds `messages` to length 1.
- *   2. The auto-send effect does NOT gate on `messages.length` — it fires
- *      when a pending handoff exists, was not sent yet, and nothing is in
- *      flight. handleChat appends the user message to the turn itself.
- *   3. The history fetch is skipped when a handoff is pending (fresh chat
- *      row — a late getChat could clobber the in-flight turn).
+ * The contract under test (what the modal + page now implement):
+ *   1. The modal persists the pending message in sessionStorage keyed by
+ *      chatId BEFORE the navigation ("mike:pending-project-chat").
+ *   2. The project chat page reads that key on mount; if (and only if)
+ *      the stored chatId matches the route's chatId, it seeds
+ *      `initialMessages` and the auto-send fires.
+ *   3. The auto-send does NOT gate on messages.length (round-4
+ *      regression: the guard was impossible to satisfy) — only on "not
+ *      sent yet, nothing in flight".
+ *   4. After sending, the storage entry is removed (consume once).
+ *   5. The history fetch is skipped while a handoff is pending.
  */
 
-interface PendingMessage {
-    role: string;
-    content: string;
-    workflow?: { id: string; title: string };
-    files?: { filename: string; document_id: string }[];
+const STORAGE_KEY = "mike:pending-project-chat";
+
+/** Mirrors the modal's persistence step. */
+function persistPending(chatId: string, message: unknown): void {
+    sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ chatId, message }),
+    );
+}
+
+/** Mirrors the page's read + chatId match. */
+function readPending(
+    chatId: string,
+): { role: string; content: string } | null {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as {
+            chatId: string;
+            message: { role: string; content: string };
+        };
+        if (parsed.chatId !== chatId) return null;
+        return parsed.message;
+    } catch {
+        return null;
+    }
 }
 
 /** Mirrors the page's auto-send predicate (post-fix). */
 function shouldAutoSend(
-    newChatMessages: PendingMessage[] | null,
+    pending: { role: string; content: string } | null,
     hasAutoSent: boolean,
     isResponseLoading: boolean,
 ): boolean {
     return (
-        newChatMessages !== null &&
-        newChatMessages.length === 1 &&
-        newChatMessages[0].role === "user" &&
+        pending !== null &&
+        pending.role === "user" &&
         !hasAutoSent &&
         !isResponseLoading
     );
 }
 
-/** Mirrors the hook's turn assembly (`apiMessagesForTurn`). */
-function assembleTurn(
-    messages: PendingMessage[],
-    incoming: PendingMessage,
-): PendingMessage[] {
-    const last = messages[messages.length - 1];
-    const alreadyAdded =
-        last !== undefined &&
-        last.role === "user" &&
-        last.content === incoming.content;
-    return alreadyAdded ? messages : [...messages, incoming];
-}
-
 /** Mirrors the history-fetch skip decision. */
 function shouldFetchHistory(
-    newChatMessages: PendingMessage[] | null,
+    newChatMessages: unknown[] | null,
+    pendingFromStorage: unknown,
 ): boolean {
-    return !(newChatMessages !== null && newChatMessages.length > 0);
+    const hasPendingHandoff =
+        (newChatMessages !== null && newChatMessages.length > 0) ||
+        pendingFromStorage !== null;
+    return !hasPendingHandoff;
 }
 
-const handoff: PendingMessage = {
+const handoff = {
     role: "user",
-    content: "implement workflow\nrevisar cláusula de preço",
-    workflow: { id: "wf-1", title: "Revisão de Contrato de Prestação de Serviços" },
-    files: [{ filename: "Petronect_REVISADO_usuario.docx", document_id: "doc-1" }],
+    content:
+        "implement workflow\nRevise o contrato anexo focando em cláusulas de preço e vigência. Responda em português.",
 };
 
-describe("TAB-07 wizard handoff auto-send", () => {
-    it("fires on mount when the handoff landed before render (seeded messages)", () => {
-        const messages = [handoff]; // initialMessages = newChatMessages ?? []
-        expect(shouldAutoSend([handoff], false, false)).toBe(true);
-        // handleChat with the message already last → no duplication
-        expect(assembleTurn(messages, handoff)).toHaveLength(1);
+describe("TAB-07 wizard handoff survives the project-route hard reload", () => {
+    it("modal persists, page reads back after a simulated reload", () => {
+        persistPending("chat-1", handoff);
+        // "reload": same sessionStorage, fresh JS heap — readPending only
+        // touches storage, so this is faithful
+        expect(readPending("chat-1")).toEqual(handoff);
     });
 
-    it("round-4 regression: fires even though messages state starts at length 0", () => {
-        // The old guard required messages.length === 1; after seeding was
-        // removed that never held. The new predicate must not depend on it.
-        const messages: PendingMessage[] = [];
-        expect(shouldAutoSend([handoff], false, false)).toBe(true);
-        expect(assembleTurn(messages, handoff)).toHaveLength(1);
+    it("a stored handoff for a DIFFERENT chat is ignored", () => {
+        persistPending("chat-1", handoff);
+        expect(readPending("chat-2")).toBeNull();
     });
 
-    it("does not fire twice (hasAutoSent) or while a response is loading", () => {
-        expect(shouldAutoSend([handoff], true, false)).toBe(false);
-        expect(shouldAutoSend([handoff], false, true)).toBe(false);
+    it("auto-send fires from storage-sourced pending with empty messages (round-4 regression)", () => {
+        persistPending("chat-1", handoff);
+        const pending = readPending("chat-1");
+        expect(shouldAutoSend(pending, false, false)).toBe(true);
     });
 
-    it("does not fire for a null handoff (normal composer navigation)", () => {
-        expect(shouldAutoSend(null, false, false)).toBe(false);
-        expect(shouldFetchHistory(null)).toBe(true);
+    it("does not fire twice or while a response is loading", () => {
+        persistPending("chat-1", handoff);
+        const pending = readPending("chat-1");
+        expect(shouldAutoSend(pending, true, false)).toBe(false);
+        expect(shouldAutoSend(pending, false, true)).toBe(false);
     });
 
-    it("skips the history fetch while a handoff is pending", () => {
-        expect(shouldFetchHistory([handoff])).toBe(false);
+    it("history fetch is skipped while a handoff is pending (context or storage)", () => {
+        persistPending("chat-1", handoff);
+        const pending = readPending("chat-1");
+        expect(shouldFetchHistory(null, pending)).toBe(false);
+        expect(shouldFetchHistory([handoff], null)).toBe(false);
+        expect(shouldFetchHistory(null, null)).toBe(true);
     });
 
-    it("clearing the handoff after send allows the normal load path on remount", () => {
-        // after auto-send the context is set to null; a reload of the page
-        // fetches history from the API as usual
-        expect(shouldFetchHistory(null)).toBe(true);
-        expect(shouldAutoSend(null, false, false)).toBe(false);
+    it("corrupted storage is ignored (parse failure does not break the page)", () => {
+        sessionStorage.setItem(STORAGE_KEY, "{not json");
+        expect(readPending("chat-1")).toBeNull();
+        expect(shouldFetchHistory(null, readPending("chat-1"))).toBe(true);
     });
 });

@@ -267,11 +267,34 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         saveChat,
         renameChat: renameChatInHistory,
     } = useChatHistoryContext();
-    // [TAB-07] The wizard sets newChatMessages in the context right before
-    // router.push-ing here. Read it LIVE (like the standalone chat page):
-    // useAssistantChat seeds its initial state from this value on the
-    // first render, so a handoff that landed before mount is displayed.
-    const initialMessages = newChatMessages ?? [];
+    // [TAB-07] The wizard handoff for project chats must survive the FULL
+    // DOCUMENT RELOAD that /projects/[id]/... navigation performs (the
+    // React context is destroyed). UseWorkflowModal persists the pending
+    // message in sessionStorage keyed by chatId; read it on mount, fall
+    // back to the live context value (same-document navigation), and
+    // consume exactly once.
+    const pendingFromStorage = useMemo(() => {
+        if (typeof window === "undefined") return null;
+        try {
+            const raw = sessionStorage.getItem("mike:pending-project-chat");
+            if (!raw) return null;
+            const parsed = JSON.parse(raw) as {
+                chatId: string;
+                message: Message;
+            };
+            if (parsed.chatId !== chatId) return null;
+            return parsed.message;
+        } catch {
+            return null;
+        }
+    }, [chatId]);
+
+    const initialMessages =
+        newChatMessages && newChatMessages.length === 1
+            ? newChatMessages
+            : pendingFromStorage
+              ? [pendingFromStorage]
+              : [];
     const {
         messages,
         isResponseLoading,
@@ -365,11 +388,14 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     useEffect(() => {
         if (hasLoaded.current) return;
         hasLoaded.current = true;
-        // [TAB-07] A wizard handoff seeds this chat's first message — skip
-        // the history fetch entirely (mirrors the standalone page): the chat
-        // row is fresh, and a late getChat resolving after the stream
-        // persisted the user message could clobber the in-flight turn.
-        if (newChatMessages && newChatMessages.length > 0) {
+        // [TAB-07] A wizard handoff seeds this chat's first message (live
+        // context OR sessionStorage after the hard reload) — skip the
+        // history fetch (fresh chat row); a late getChat resolving after
+        // the stream persisted the user message could clobber the turn.
+        const hasPendingHandoff =
+            (newChatMessages && newChatMessages.length > 0) ||
+            pendingFromStorage !== null;
+        if (hasPendingHandoff) {
             setChatLoaded(true);
             return;
         }
@@ -389,25 +415,32 @@ export default function ProjectAssistantChatPage({ params }: Props) {
     }, [chats, chatId]);
 
     useEffect(() => {
-        // [TAB-07] Wizard handoff auto-send. `messages` is seeded from
-        // newChatMessages (live read above), so it starts at length 1 when
-        // the handoff landed before mount. The `handleChat` appends the
-        // user message to the turn when it is not already the last one,
-        // so we do NOT gate on messages.length — only on "we haven't sent
-        // yet and nothing is in flight". This is the fix for the guard
-        // that was impossible to satisfy after the seeding was removed.
+        // [TAB-07] Wizard handoff auto-send. The pending message comes from
+        // the live context (same-document navigation) or sessionStorage
+        // (full reload — project routes hard-navigate). `messages` is
+        // seeded from whichever source won, and handleChat appends the
+        // user message to the turn itself, so we do NOT gate on
+        // messages.length — only on "not sent yet, nothing in flight".
+        const pending =
+            newChatMessages && newChatMessages.length === 1
+                ? newChatMessages[0]
+                : pendingFromStorage;
         if (
-            newChatMessages &&
-            newChatMessages.length === 1 &&
-            newChatMessages[0].role === "user" &&
+            pending &&
+            pending.role === "user" &&
             !hasAutoSent.current &&
             !isResponseLoading
         ) {
             hasAutoSent.current = true;
             setNewChatMessages(null);
-            void handleChat(newChatMessages[0]);
+            try {
+                sessionStorage.removeItem("mike:pending-project-chat");
+            } catch {
+                // non-fatal
+            }
+            void handleChat(pending);
         }
-    }, [newChatMessages, messages.length, isResponseLoading, handleChat, setNewChatMessages]);
+    }, [newChatMessages, pendingFromStorage, isResponseLoading, handleChat, setNewChatMessages]);
 
     const scrollLatestUserToTop = useCallback(() => {
         requestAnimationFrame(() => {
