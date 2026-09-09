@@ -1378,6 +1378,22 @@ export function useAssistantChat({
     if (newChatId) {
       setChatId(newChatId);
       setCurrentChatId(newChatId);
+      // [FORM-05] Persist the pending first message in sessionStorage
+      // BEFORE navigating, keyed by chatId — the same contract the TAB-07
+      // wizard handoff uses for project chats. If the navigation to
+      // /assistant/chat/[id] loses the in-memory context (provider
+      // remount), the chat page reads the message back from storage,
+      // auto-sends once and removes the entry. Without this, the chat
+      // row exists with 0 messages and the page bounces back to
+      // /assistant (QA chat fd3a9399).
+      try {
+        sessionStorage.setItem(
+          "mike:pending-assistant-chat",
+          JSON.stringify({ chatId: newChatId, message }),
+        );
+      } catch {
+        // storage unavailable — context path still works
+      }
     }
 
     return newChatId;
