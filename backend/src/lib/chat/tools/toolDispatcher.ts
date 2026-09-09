@@ -1834,6 +1834,41 @@ export async function runToolCalls(
       }
     } else if (tc.function.name === "generate_docx") {
       const title = args.title as string;
+      // QA FORM-02 (P0): when the turn has READ source documents, a
+      // generate_docx call means the model is trying to fulfill a
+      // revision request by rebuilding the contract from extracted text —
+      // the output loses the source template (media, headers/footers,
+      // tables, styles). Block it and direct the model to edit_document,
+      // which operates on the source OOXML package with tracked changes.
+      // Creating a brand-new document remains allowed when no source doc
+      // was read in this turn (the legitimate "draft from scratch" path).
+      if (turnReadState && turnReadState.size > 0) {
+        const readNames = Array.from(turnReadState.values())
+          .map((r) => r.filename)
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(", ");
+        devLog(
+          `[generate_docx] BLOCKED: ${turnReadState.size} source document(s) read this turn (${readNames}) — revision must use edit_document`,
+        );
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            error: true,
+            blocked_reason: "revision_requires_edit_existing",
+            message:
+              `Não foi gerado um novo documento: esta requisição é uma revisão de minuta existente. ` +
+              `Documentos-fonte lidos neste turno: ${readNames || "(lidos)"}. ` +
+              `Para alterar, comentar ou revisar uma minuta existente, use SEMPRE a ferramenta edit_document sobre o documento-fonte ` +
+              `(ela preserva o template original — logo, cabeçalhos, rodapés, tabelas e estilos — e registra as alterações como revisão). ` +
+              `NÃO tente chamar generate_docx novamente nesta situação; não gere o documento a partir do texto extraído. ` +
+              `Se — e somente se — o usuário pediu explicitamente um documento NOVO sem vínculo com a minuta, responda ao usuário explicando ` +
+              `que isso criará um documento sem o template da minuta e peça confirmação explícita antes.`,
+          }),
+        });
+        continue;
+      }
       const cachedArtifact = generatedArtifactsByTitle.get(
         turnArtifactKey("docx", title),
       );
