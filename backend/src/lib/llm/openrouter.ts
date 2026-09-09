@@ -262,6 +262,7 @@ function logLlmCall(fields: {
   promptTokens?: number;
   completionTokens?: number;
   contextTokens?: number;
+  timeToFirstTokenMs?: number;
 }) {
   const parts = [
     `[llm] model=${fields.model}`,
@@ -276,6 +277,8 @@ function logLlmCall(fields: {
     parts.push(`completion_tokens=${fields.completionTokens}`);
   if (fields.contextTokens !== undefined)
     parts.push(`context_tokens=${fields.contextTokens}`);
+  if (fields.timeToFirstTokenMs !== undefined)
+    parts.push(`time_to_first_token_ms=${fields.timeToFirstTokenMs}`);
   console.log(parts.join(" "));
 }
 
@@ -452,10 +455,52 @@ export async function streamOpenRouter(
       // Suppresses leaked DSML tool-call markup from the content channel.
       const dsmlFilter = new DsmlContentFilter();
 
+      // [STALL-WATCHDOG] If the upstream stops sending bytes mid-stream
+      // (frozen connection), the old read loop waited forever — the user
+      // saw "Working" for many minutes and the partial answer got
+      // persisted truncated when the connection finally died (QA report:
+      // 17-minute wait, text ending mid-word). Race each read against a
+      // stall timer: no bytes for STALL_TIMEOUT_MS aborts the whole
+      // request so the normal error path turns the job into a terminal
+      // `failed` state instead of hanging.
+      const STALL_TIMEOUT_MS = 90_000;
+      const streamStart = Date.now();
+      let timeToFirstTokenMs: number | undefined;
+      let stallAbort: AbortController | null = null;
+      const readWithStallTimeout = async () => {
+        stallAbort = new AbortController();
+        const timer = setTimeout(() => {
+          stallAbort?.abort(
+            new Error(
+              `LLM stream stalled: no bytes for ${STALL_TIMEOUT_MS / 1000}s ` +
+                `(model=${model}, elapsed=${Math.round((Date.now() - streamStart) / 1000)}s)`,
+            ),
+          );
+        }, STALL_TIMEOUT_MS);
+        try {
+          return await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              stallAbort?.signal.addEventListener("abort", () => {
+                // Release the connection — the pending read() would
+                // otherwise keep the dead stream open.
+                void reader.cancel().catch(() => {});
+                reject(stallAbort?.signal.reason ?? new Error("stalled"));
+              });
+            }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
       while (true) {
         throwIfAborted(params.abortSignal);
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithStallTimeout();
         if (done) break;
+        if (timeToFirstTokenMs === undefined) {
+          timeToFirstTokenMs = Date.now() - streamStart;
+        }
 
         const decoded = decoder.decode(value, { stream: true });
         logRawLlmStream({
@@ -545,6 +590,7 @@ export async function streamOpenRouter(
           promptTokens: streamUsage.prompt_tokens,
           completionTokens: streamUsage.completion_tokens,
           contextTokens: streamUsage.total_tokens,
+          timeToFirstTokenMs,
         });
       }
 
