@@ -76,6 +76,7 @@ Ambos 100% sintéticos (partes fictícias, valores fictícios) — nenhum dado r
 | `sprint2_acceptance.py` | DOC-01, DOC-02, DOC-03, DOC-04 | Upload → pipeline (`analysis_ready`), lotes 1/5/10, idempotência (reenvio idêntico = mesmo doc), `/ready` backlog |
 | `sprint4_acceptance.py` | DL-01, DL-02 | Botão vs API mesmo SHA-256, `Content-Disposition` filename, 404 doc inexistente, 401/erro token inválido |
 | `sprint4_integrity.py` | INT-01, INT-02 | Edição autorizada preserva manifesto (hash); edição destrutiva (heading estrutural) bloqueada pelo gate |
+| `pr86_long_response_integrity.py` | STREAM-01 (P1 do reaceite PR #86) | Resposta longa com marcadores obrigatórios (`Achado N` × N + `CONCLUSÃO FINAL`); FAIL se marcador faltar, se a persistida pós-reload for menor que a emitida no stream, ou houver terminal duplicado/anômalo (`error`/`job_paused`) |
 
 Regressões hoje BLOCKED que passam a ser executáveis: **DOC-02, DOC-04** (dependiam de harness), além dos reatestes JOB/INT/DL acima.
 
