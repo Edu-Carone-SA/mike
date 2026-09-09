@@ -1253,7 +1253,39 @@ export async function runEditDocument(params: {
           `Refine the edit so the substitution lands exactly as requested.`,
       };
     }
-    if (countOccurrences(beforeText, find) <= countOccurrences(candidateText, find)) {
+    // FORM-04: an insertion edit (replace starting with find, e.g.
+    // "Atendimento Professional" → "Atendimento Professional (ret. QA)")
+    // keeps the find text inside the replacement, so requiring the raw
+    // find-count to decrease blocked every legitimate insertion (QA job
+    // 1b6d7cbc: four correct edit_document attempts, no V3 published).
+    // Split the consumption check by edit shape:
+    //   - insertion (find is a prefix of replace): the replace text must
+    //     have actually landed — its count in the candidate must exceed
+    //     its count in the source.
+    //   - substitution (find not a prefix of replace): the original
+    //     count-based rule still applies — a free-standing occurrence of
+    //     find must have been consumed. This is what catches the INT-01
+    //     mis-anchored shape ("80.000,00" → "980.000,00" composing
+    //     "1980.000,00" instead of the requested "190.000,00").
+    const isInsertion = replace.startsWith(find) && replace !== find;
+    if (isInsertion) {
+      if (
+        countOccurrences(candidateText, replace) <=
+        countOccurrences(beforeText, replace)
+      ) {
+        return {
+          ok: false,
+          error:
+            `Edit blocked by material check — the requested insertion ` +
+            `"${replace.slice(0, 60)}" was not applied to the candidate ` +
+            `version. Refine context_before/context_after so the insertion ` +
+            `lands on the intended text.`,
+        };
+      }
+    } else if (
+      countOccurrences(beforeText, find) <=
+      countOccurrences(candidateText, find)
+    ) {
       return {
         ok: false,
         error:
