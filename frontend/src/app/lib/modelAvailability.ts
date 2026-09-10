@@ -1,7 +1,8 @@
 import { SETTINGS_MODELS, type ModelOption } from "../components/assistant/ModelToggle";
 import type { ApiKeyState } from "@/app/lib/mikeApi";
 
-export type ModelProvider = "claude" | "gemini" | "openai" | "deepseek" | "openrouter";
+// MIKE-06: OpenRouter-only.
+export type ModelProvider = "openrouter";
 
 export function getModelProvider(modelId: string): ModelProvider | null {
     const model = SETTINGS_MODELS.find((m) => m.id === modelId);
@@ -26,19 +27,13 @@ export function isProviderAvailable(
 }
 
 export function providerLabel(provider: ModelProvider): string {
-    if (provider === "claude") return "Anthropic (Claude)";
-    if (provider === "openai") return "OpenAI";
-    if (provider === "deepseek") return "DeepSeek";
-    if (provider === "openrouter") return "OpenRouter";
-    return "Google (Gemini)";
+    void provider;
+    return "OpenRouter";
 }
 
 export function modelGroupToProvider(
     group: ModelOption["group"],
 ): ModelProvider {
-    if (group === "Anthropic") return "claude";
-    if (group === "OpenAI") return "openai";
-    if (group === "DeepSeek") return "deepseek";
-    if (group === "OpenRouter") return "openrouter";
-    return "gemini";
+    void group;
+    return "openrouter";
 }

@@ -2,7 +2,9 @@
 // Callers always speak OpenAI-style tools + { role, content } messages; each
 // provider translates internally.
 
-export type Provider = "claude" | "gemini" | "openai" | "openrouter" | "deepseek";
+// MIKE-06: OpenRouter-only. Legacy direct providers were removed; every
+// model routes through the OpenRouter adapter.
+export type Provider = "openrouter";
 
 export type OpenAIToolSchema = {
     type: "function";

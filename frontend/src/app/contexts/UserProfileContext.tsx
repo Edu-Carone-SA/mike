@@ -68,21 +68,14 @@ const UserProfileContext = createContext<UserProfileContextType | undefined>(
 );
 
 const API_KEY_PROVIDERS: ApiKeyProvider[] = [
-    "claude",
-    "gemini",
-    "openai",
+    // MIKE-06: OpenRouter-only (+ courtlistener, non-LLM legal research).
     "openrouter",
-    "deepseek",
     "courtlistener",
 ];
 
 function emptyApiKeys(): ApiKeyState {
     return {
-        claude: { configured: false, source: null },
-        gemini: { configured: false, source: null },
-        openai: { configured: false, source: null },
         openrouter: { configured: false, source: null },
-        deepseek: { configured: false, source: null },
         courtlistener: { configured: false, source: null },
     };
 }
