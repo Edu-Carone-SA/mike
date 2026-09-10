@@ -74,8 +74,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         id: string;
         title: string;
     } | null>(null);
-    const [model, setModel] = useSelectedModel();
     const { profile } = useUserProfile();
+    const [model, setModel] = useSelectedModel(profile?.availableModels);
     const apiKeys = profile?.apiKeys;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const controlsRef = useRef<HTMLDivElement>(null);
@@ -336,6 +336,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
                                 value={model}
                                 onChange={setModel}
                                 apiKeys={apiKeys}
+                                availableModels={profile?.availableModels}
                             />
                             <button
                                 type="button"

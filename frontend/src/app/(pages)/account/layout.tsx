@@ -32,6 +32,12 @@ const ALL_TABS: TabDef[] = [
         href: "/account/user-administration",
         adminOnly: true,
     },
+    {
+        id: "platform-settings",
+        label: "Platform Settings",
+        href: "/account/platform-settings",
+        adminOnly: true,
+    },
 ];
 
 export default function AccountLayout({

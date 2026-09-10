@@ -5,6 +5,7 @@ import {
   type LlmMessage,
   type OpenAIToolSchema,
 } from "../llm";
+import { getPlatformSettings } from "../platformSettings";
 import { safeErrorMessage } from "../safeError";
 import { createServerSupabase } from "../supabase";
 import {
@@ -383,7 +384,20 @@ export async function runLLMStream(params: {
     }
   };
 
-  const selectedModel = resolveModel(model, DEFAULT_MAIN_MODEL);
+  // MIKE-07: the admin-configured model list takes precedence. A requested
+  // model must be in the platform list when one is configured; otherwise
+  // fall back to the built-in catalog (DEFAULT_MAIN_MODEL).
+  let selectedModel: string;
+  try {
+    const platform = await getPlatformSettings();
+    const allowed = platform.availableModels.map((m) => m.id);
+    selectedModel =
+      allowed.length > 0 && model && allowed.includes(model)
+        ? model
+        : resolveModel(model, allowed[0] ?? DEFAULT_MAIN_MODEL);
+  } catch {
+    selectedModel = resolveModel(model, DEFAULT_MAIN_MODEL);
+  }
 
   let streamResult: Awaited<ReturnType<typeof streamChatWithTools>> | null = null;
   try {

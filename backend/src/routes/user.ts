@@ -19,6 +19,10 @@ import {
     saveUserApiKey,
 } from "../lib/userApiKeys";
 import {
+    getPlatformSettings,
+    type AvailableModel,
+} from "../lib/platformSettings";
+import {
     completeUserMcpConnectorOAuth,
     createUserMcpConnector,
     deleteUserMcpConnector,
@@ -531,6 +535,18 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
     const db = createServerSupabase();
     const apiKeyStatus = await getUserApiKeyStatus(userId, db);
 
+    // MIKE-07: platform-wide available models (admin-configured). Attached to
+    // the profile so every client renders the same model list.
+    let availableModels: AvailableModel[] = [];
+    try {
+        const platform = await getPlatformSettings(db);
+        availableModels = platform.availableModels;
+    } catch (err) {
+        console.error("[user/profile] platform settings read failed", {
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
     // Attach keySuffix and editable flag for each provider
     const keySuffixes: Record<string, string | null> = {};
     for (const provider of ["claude", "gemini", "openai", "openrouter", "deepseek", "courtlistener"] as const) {
@@ -554,7 +570,7 @@ userRouter.get("/profile", requireAuth, async (_req, res) => {
         apiKeyStatus,
     });
     if (error) return void res.status(500).json({ detail: error.message });
-    res.json({ ...data, apiKeyStatus: enrichedStatus });
+    res.json({ ...data, apiKeyStatus: enrichedStatus, availableModels });
 });
 
 // PATCH /user/profile

@@ -33,16 +33,46 @@ export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 // MIKE-06: OpenRouter-only — single group.
 export const GROUP_ORDER: ModelOption["group"][] = ["OpenRouter"];
 
+/**
+ * MIKE-07: resolve the active model list. When the admin configured
+ * platform models, they replace the built-in list everywhere; otherwise
+ * fall back to the built-in OpenRouter catalog above.
+ */
+export function platformModelOptions(
+    availableModels?: Array<{ id: string; name?: string }> | null,
+): ModelOption[] {
+    if (availableModels && availableModels.length > 0) {
+        return availableModels.map((m) => ({
+            id: m.id,
+            label: m.name?.trim() || m.id,
+            group: "OpenRouter" as const,
+        }));
+    }
+    return MODELS;
+}
+
+/** Allowed IDs for the active list (admin-configured or built-in). */
+export function allowedModelIds(
+    availableModels?: Array<{ id: string; name?: string }> | null,
+): Set<string> {
+    const options = platformModelOptions(availableModels);
+    return new Set(options.map((m) => m.id));
+}
+
 interface Props {
     value: string;
     onChange: (id: string) => void;
     apiKeys?: ApiKeyState;
+    /** MIKE-07: admin-configured platform models (falls back to MODELS). */
+    availableModels?: Array<{ id: string; name?: string }> | null;
 }
 
-export function ModelToggle({ value, onChange, apiKeys }: Props) {
+export function ModelToggle({ value, onChange, apiKeys, availableModels }: Props) {
     const [isOpen, setIsOpen] = useState(false);
-    const selected = MODELS.find((m) => m.id === value);
+    const options = platformModelOptions(availableModels);
+    const selected = options.find((m) => m.id === value);
     const selectedLabel = selected?.label ?? "Model";
+
     const selectedAvailable = apiKeys
         ? isModelAvailable(value, apiKeys)
         : true;
@@ -72,7 +102,7 @@ export function ModelToggle({ value, onChange, apiKeys }: Props) {
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56 z-50" side="top" align="end">
                 {GROUP_ORDER.map((group, gi) => {
-                    const items = MODELS.filter((m) => m.group === group);
+                    const items = options.filter((m) => m.group === group);
                     if (items.length === 0) return null;
                     return (
                         <div key={group}>

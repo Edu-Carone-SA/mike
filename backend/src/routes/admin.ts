@@ -2,6 +2,12 @@ import { Router } from "express";
 import { createClient } from "@supabase/supabase-js";
 import { randomFillSync } from "crypto";
 import { requireAuth, requireAdmin } from "../middleware/auth";
+import {
+    getPlatformSettings,
+    parseAvailableModels,
+    setAvailableModels,
+    setPlatformOpenRouterKey,
+} from "../lib/platformSettings";
 
 export const adminRouter = Router();
 
@@ -512,4 +518,164 @@ adminRouter.get("/users/:userId/audit", async (req, res) => {
   }
 
   return res.json({ entries: data ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// MIKE-07: Platform settings — admin-managed OpenRouter key + available models
+// ---------------------------------------------------------------------------
+
+type CatalogCacheEntry = {
+    at: number;
+    models: Array<{
+        id: string;
+        name: string;
+        context_length: number | null;
+        pricing: { prompt: string; completion: string };
+    }>;
+};
+let catalogCache: CatalogCacheEntry | null = null;
+const CATALOG_TTL_MS = 5 * 60_000;
+
+function platformApiKey(): string {
+    const key = process.env.OPENROUTER_API_KEY?.trim() || "";
+    if (!key) {
+        throw new Error("OpenRouter API key is not configured");
+    }
+    return key;
+}
+
+// GET /admin/openrouter/models?q= — search the OpenRouter catalog (cached)
+adminRouter.get("/openrouter/models", async (req, res) => {
+    try {
+        if (!catalogCache || Date.now() - catalogCache.at > CATALOG_TTL_MS) {
+            const key = platformApiKey();
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15_000);
+            try {
+                const resp = await fetch("https://openrouter.ai/api/v1/models", {
+                    headers: { Authorization: `Bearer ${key}` },
+                    signal: controller.signal,
+                });
+                if (!resp.ok) {
+                    return res
+                        .status(502)
+                        .json({ detail: `OpenRouter catalog returned ${resp.status}` });
+                }
+                const body = (await resp.json()) as {
+                    data?: Array<Record<string, unknown>>;
+                };
+                const models = (body.data ?? [])
+                    .map((m) => ({
+                        id: String(m.id ?? ""),
+                        name: String(m.name ?? m.id ?? ""),
+                        context_length:
+                            typeof m.context_length === "number" ? m.context_length : null,
+                        pricing: {
+                            prompt: String(
+                                (m.pricing as Record<string, unknown>)?.prompt ?? "0",
+                            ),
+                            completion: String(
+                                (m.pricing as Record<string, unknown>)?.completion ?? "0",
+                            ),
+                        },
+                    }))
+                    .filter((m) => m.id);
+                catalogCache = { at: Date.now(), models };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+        const q = String(req.query.q ?? "").trim().toLowerCase();
+        const filtered = q
+            ? catalogCache.models.filter(
+                  (m) =>
+                      m.id.toLowerCase().includes(q) ||
+                      m.name.toLowerCase().includes(q),
+              )
+            : catalogCache.models;
+        return res.json({ models: filtered.slice(0, 50), total: filtered.length });
+    } catch (err) {
+        return res.status(500).json({
+            detail: err instanceof Error ? err.message : "Catalog search failed",
+        });
+    }
+});
+
+// GET /admin/platform-settings — current settings (key never leaves the server)
+adminRouter.get("/platform-settings", async (req, res) => {
+    try {
+        const settings = await getPlatformSettings(undefined, {
+            forceRefresh: true,
+        });
+        return res.json({
+            hasOpenRouterKey: settings.hasOpenRouterKey,
+            openRouterKeyUpdatedAt: settings.openRouterKeyUpdatedAt,
+            openRouterKeySource: settings.hasOpenRouterKey ? "admin" : "env",
+            availableModels: settings.availableModels,
+            availableModelsUpdatedAt: settings.availableModelsUpdatedAt,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            detail: err instanceof Error ? err.message : "Failed to read settings",
+        });
+    }
+});
+
+// PUT /admin/platform-settings — update key and/or available models
+adminRouter.put("/platform-settings", async (req, res) => {
+    const actorId = res.locals.userId as string;
+    const actorEmail = res.locals.userEmail as string | undefined;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const admin = createAdminClient();
+
+    try {
+        // 1. OpenRouter key (optional field; null clears it)
+        if ("openrouter_api_key" in body) {
+            const value = body.openrouter_api_key;
+            if (value !== null && typeof value !== "string") {
+                return res
+                    .status(400)
+                    .json({ detail: "openrouter_api_key must be a string or null" });
+            }
+            if (value !== null && !value.trim()) {
+                return res
+                    .status(400)
+                    .json({ detail: "openrouter_api_key must be non-empty or null" });
+            }
+            await setPlatformOpenRouterKey(actorId, value);
+            await logAdminAction(
+                admin,
+                actorId,
+                actorEmail ?? "",
+                value ? "platform_openrouter_key_set" : "platform_openrouter_key_cleared",
+            );
+        }
+
+        // 2. Available models (optional field; max 5, validated shape)
+        if ("available_models" in body) {
+            const models = parseAvailableModels(body.available_models);
+            if (!models) {
+                return res.status(400).json({
+                    detail:
+                        "available_models must be an array of at most 5 models with id, name, context_length and pricing {prompt, completion}",
+                });
+            }
+            await setAvailableModels(actorId, models);
+            await logAdminAction(admin, actorId, actorEmail ?? "", "platform_models_updated", undefined, undefined, undefined, JSON.stringify(models.map((m) => m.id)));
+        }
+
+        const settings = await getPlatformSettings(undefined, {
+            forceRefresh: true,
+        });
+        return res.json({
+            hasOpenRouterKey: settings.hasOpenRouterKey,
+            openRouterKeyUpdatedAt: settings.openRouterKeyUpdatedAt,
+            availableModels: settings.availableModels,
+            availableModelsUpdatedAt: settings.availableModelsUpdatedAt,
+        });
+    } catch (err) {
+        return res.status(500).json({
+            detail: err instanceof Error ? err.message : "Failed to update settings",
+        });
+    }
 });
