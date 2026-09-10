@@ -13,9 +13,8 @@ import {
 import { useUserProfile } from "@/app/contexts/UserProfileContext";
 import type { ApiKeyState } from "@/app/lib/mikeApi";
 import {
-    MODELS,
-    SETTINGS_MODELS,
     GROUP_ORDER,
+    platformModelOptions,
     type ModelOption,
 } from "@/app/components/assistant/ModelToggle";
 import {
@@ -32,6 +31,11 @@ type ModelPreferenceField = "titleModel" | "tabularModel";
 
 export default function ModelPreferencesPage() {
     const { profile, updateModelPreference } = useUserProfile();
+    // MIKE-07: the admin-configured platform list drives the dropdowns;
+    // empty list falls back to the built-in catalog.
+    const activeOptions: ModelOption[] = platformModelOptions(
+        profile?.availableModels,
+    );
     const [savingField, setSavingField] = useState<ModelPreferenceField | null>(
         null,
     );
@@ -92,9 +96,10 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.titleModel ??
                             profile?.titleModel ??
+                            activeOptions[0]?.id ??
                             "deepseek/deepseek-v4-flash"
                         }
-                        options={SETTINGS_MODELS}
+                        options={activeOptions}
                         apiKeys={profile?.apiKeys}
                         isSaving={savingField === "titleModel"}
                         isSaved={savedField === "titleModel"}
@@ -114,9 +119,10 @@ export default function ModelPreferencesPage() {
                         value={
                             optimisticValues.tabularModel ??
                             profile?.tabularModel ??
+                            activeOptions[0]?.id ??
                             "deepseek/deepseek-v4-flash"
                         }
-                        options={MODELS}
+                        options={activeOptions}
                         apiKeys={profile?.apiKeys}
                         isSaving={savingField === "tabularModel"}
                         isSaved={savedField === "tabularModel"}

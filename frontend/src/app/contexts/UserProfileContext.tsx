@@ -13,6 +13,7 @@ import {
     type ApiKeyState,
     type ApiKeyProvider,
     type UserProfile as ApiUserProfile,
+    type PlatformModel,
     getUserProfile,
     isMfaRequiredError,
     saveApiKey,
@@ -42,6 +43,8 @@ interface UserProfile {
     apiKeys?: ApiKeyState;
     keySuffixes: Record<string, string | null>;
     editable: Record<string, boolean>;
+    /** MIKE-07: admin-configured platform models (empty = built-in list). */
+    availableModels?: PlatformModel[];
 }
 
 interface UserProfileContextType {

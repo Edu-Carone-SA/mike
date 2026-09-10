@@ -7,6 +7,7 @@ import {
     type UserApiKeys,
 } from "./llm";
 import { getUserApiKeys as getStoredUserApiKeys } from "./userApiKeys";
+import { getPlatformOpenRouterKey } from "./platformSettings";
 
 export type UserModelSettings = {
     title_model: string;
@@ -49,5 +50,21 @@ export async function getUserApiKeys(
     db?: ReturnType<typeof createServerSupabase>,
 ): Promise<UserApiKeys> {
     const client = db ?? createServerSupabase();
-    return getStoredUserApiKeys(userId, client);
+    const apiKeys = await getStoredUserApiKeys(userId, client);
+    // MIKE-07: key resolution order per user: per-user key → admin-managed
+    // platform key (platform_settings) → env OPENROUTER_API_KEY (the
+    // adapter's own fallback).
+    if (!apiKeys.openrouter?.trim()) {
+        try {
+            const platformKey = await getPlatformOpenRouterKey(client);
+            if (platformKey?.trim()) {
+                apiKeys.openrouter = platformKey;
+            }
+        } catch (err) {
+            console.error("[user-settings] platform key fallback failed", {
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    return apiKeys;
 }

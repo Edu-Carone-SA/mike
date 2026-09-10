@@ -231,6 +231,36 @@ export interface UserProfile {
     role: string;
     status: string;
     apiKeyStatus: ApiKeyStatus;
+    /** MIKE-07: admin-configured platform models (empty = built-in list). */
+    availableModels?: PlatformModel[];
+}
+
+/** MIKE-07: a model entry from the admin-configured platform list. */
+export interface PlatformModel {
+    id: string;
+    name: string;
+    context_length: number | null;
+    pricing: { prompt: string; completion: string };
+}
+
+export interface PlatformSettingsResponse {
+    hasOpenRouterKey: boolean;
+    openRouterKeyUpdatedAt: string | null;
+    openRouterKeySource?: string;
+    availableModels: PlatformModel[];
+    availableModelsUpdatedAt: string | null;
+}
+
+export interface OpenRouterCatalogModel {
+    id: string;
+    name: string;
+    context_length: number | null;
+    pricing: { prompt: string; completion: string };
+}
+
+export interface OpenRouterCatalogResponse {
+    models: OpenRouterCatalogModel[];
+    total: number;
 }
 
 export interface AdminUser {
@@ -271,6 +301,29 @@ export async function getUserProfile(): Promise<UserProfile> {
 
 export async function listAdminUsers(): Promise<AdminUserListResponse> {
     return apiRequest<AdminUserListResponse>("/admin/users");
+}
+
+// MIKE-07: platform settings (admin OpenRouter key + available models)
+export async function getPlatformSettingsApi(): Promise<PlatformSettingsResponse> {
+    return apiRequest<PlatformSettingsResponse>("/admin/platform-settings");
+}
+
+export async function updatePlatformSettingsApi(body: {
+    openrouter_api_key?: string | null;
+    available_models?: PlatformModel[];
+}): Promise<PlatformSettingsResponse> {
+    return apiRequest<PlatformSettingsResponse>("/admin/platform-settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+    });
+}
+
+export async function searchOpenRouterCatalog(
+    q: string,
+): Promise<OpenRouterCatalogResponse> {
+    return apiRequest<OpenRouterCatalogResponse>(
+        `/admin/openrouter/models?q=${encodeURIComponent(q)}`,
+    );
 }
 
 export async function createAdminUser(
