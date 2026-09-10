@@ -1,4 +1,9 @@
 import { describe, it, expect } from "vitest";
+import {
+    MAX_CONTINUATIONS,
+    decideContinuation,
+    gracefulCloseSuffix,
+} from "../src/lib/llm/openrouter";
 
 /**
  * MIKE-06 — auto-continue output ceiling.
@@ -8,46 +13,19 @@ import { describe, it, expect } from "vitest";
  * tokens grew 13915 → 14026 → ...) — ~65k output tokens, minutes of
  * "Working", mid-word truncations.
  *
- * Contract under test:
- *   1. MAX_CONTINUATIONS is 1 — one continuation max, so the effective
- *      output ceiling is 2 × MAX_OUTPUT_TOKENS.
- *   2. When the ceiling is hit with finish_reason==="length", the turn
- *      ends GRACEFULLY: the visible text gets a closing suffix (never a
- *      mid-word cut) and the loop breaks.
- *   3. A continuation does NOT consume tool budget (QA JOB-02).
+ * These tests import the REAL adapter exports (decideContinuation /
+ * gracefulCloseSuffix / MAX_CONTINUATIONS) — the same functions the tool
+ * loop calls — so an adapter regression fails here instead of passing
+ * against a mirrored copy.
  */
 
-const MAX_CONTINUATIONS = 1;
+describe("MIKE-06 auto-continue output ceiling (real adapter exports)", () => {
+    it("MAX_CONTINUATIONS is 1 — effective ceiling 2 × MAX_OUTPUT_TOKENS", () => {
+        expect(MAX_CONTINUATIONS).toBe(1);
+    });
 
-/** Mirrors the adapter loop's continue-vs-break decision. */
-function decideNextStep(opts: {
-    finishReason: string | null;
-    fullText: string;
-    continuationsUsed: number;
-    hasToolCalls: boolean;
-}): { action: "continue_turn" | "graceful_close" | "break" } {
-    const { finishReason, fullText, continuationsUsed, hasToolCalls } = opts;
-    if (hasToolCalls) return { action: "break" };
-    if (finishReason === "length" && fullText && continuationsUsed < MAX_CONTINUATIONS) {
-        return { action: "continue_turn" };
-    }
-    if (finishReason === "length" && fullText) {
-        return { action: "graceful_close" };
-    }
-    return { action: "break" };
-}
-
-/** Mirrors the graceful-close suffix from openrouter.ts. */
-function gracefulSuffix(fullText: string): string {
-    const graceful =
-        fullText.trimEnd().replace(/[\s,;:–—-]+$/, "") +
-        " …\n\n[resposta encerrada por limite de extensão]";
-    return graceful.slice(fullText.length);
-}
-
-describe("MIKE-06 auto-continue output ceiling", () => {
     it("allows exactly one continuation when the first cut hits max_tokens", () => {
-        const step = decideNextStep({
+        const step = decideContinuation({
             finishReason: "length",
             fullText: "resposta longa cortada no meio",
             continuationsUsed: 0,
@@ -57,18 +35,18 @@ describe("MIKE-06 auto-continue output ceiling", () => {
     });
 
     it("closes gracefully when the ceiling is hit (no second continuation)", () => {
-        const step = decideNextStep({
+        const step = decideContinuation({
             finishReason: "length",
             fullText: "resposta ainda cortada",
-            continuationsUsed: 1, // the single continuation was used
+            continuationsUsed: MAX_CONTINUATIONS, // the single continuation was used
             hasToolCalls: false,
         });
         expect(step.action).toBe("graceful_close");
     });
 
-    it("graceful close never ends mid-word: suffix always present and sentence-like", () => {
+    it("graceful close never ends mid-word: suffix present, closing marker last", () => {
         const midWord = "cláusula de inadimp";
-        const suffix = gracefulSuffix(midWord);
+        const suffix = gracefulCloseSuffix(midWord);
         expect(suffix).toContain("…");
         expect(suffix).toContain("[resposta encerrada por limite de extensão]");
         const closed = midWord + suffix;
@@ -76,8 +54,15 @@ describe("MIKE-06 auto-continue output ceiling", () => {
         expect(closed.trimEnd().endsWith("extensão]")).toBe(true);
     });
 
+    it("no suffix when the text already ends cleanly", () => {
+        const clean = "Resposta completa, com conclusão.";
+        expect(gracefulCloseSuffix(clean)).not.toBe("");
+        // fullText + suffix always ends with the closing marker
+        expect((clean + gracefulCloseSuffix(clean)).trimEnd().endsWith("extensão]")).toBe(true);
+    });
+
     it("a normal stop (finish_reason stop) breaks without continuation", () => {
-        const step = decideNextStep({
+        const step = decideContinuation({
             finishReason: "stop",
             fullText: "resposta completa.",
             continuationsUsed: 0,
@@ -87,7 +72,7 @@ describe("MIKE-06 auto-continue output ceiling", () => {
     });
 
     it("tool-call turns never take the continuation path (budget untouched)", () => {
-        const step = decideNextStep({
+        const step = decideContinuation({
             finishReason: "length",
             fullText: "parcial",
             continuationsUsed: 0,

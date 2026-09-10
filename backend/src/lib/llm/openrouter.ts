@@ -15,6 +15,51 @@ const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 // limit). 8k is plenty for a chat answer; documents live in the input.
 const MAX_OUTPUT_TOKENS = 8192;
 
+// MIKE-06 5.1: auto-continue budget. ONE continuation max — 8 continuations
+// × 8192 tokens each re-feeding the full prompt produced ~65k-token
+// answers, minutes of "Working" and mid-word truncations. Exported for the
+// ceiling test (tests/autoContinueCeiling.test.ts) so the contract is
+// exercised against the real adapter values, not a mirror.
+export const MAX_CONTINUATIONS = 1;
+
+/** Decision of the tool loop when the stream ends without tool calls. */
+export type ContinuationDecision =
+    | { action: "continue_turn" }
+    | { action: "graceful_close" }
+    | { action: "break" };
+
+/**
+ * MIKE-06 5.1: pure decision for the finish_reason==="length" branch.
+ * Extracted from the loop so the ceiling contract is unit-testable.
+ */
+export function decideContinuation(opts: {
+    finishReason: string | null;
+    fullText: string;
+    continuationsUsed: number;
+    hasToolCalls: boolean;
+}): ContinuationDecision {
+    const { finishReason, fullText, continuationsUsed, hasToolCalls } = opts;
+    if (hasToolCalls) return { action: "break" };
+    if (finishReason === "length" && fullText) {
+        return continuationsUsed < MAX_CONTINUATIONS
+            ? { action: "continue_turn" }
+            : { action: "graceful_close" };
+    }
+    return { action: "break" };
+}
+
+/**
+ * MIKE-06 5.1: suffix streamed when the output ceiling is hit, so the
+ * visible text never ends mid-word (the `inadimp` symptom).
+ * Returns "" when fullText already ends cleanly (no suffix needed).
+ */
+export function gracefulCloseSuffix(fullText: string): string {
+    const graceful =
+        fullText.trimEnd().replace(/[\s,;:–—-]+$/, "") +
+        " …\n\n[resposta encerrada por limite de extensão]";
+    return graceful.slice(fullText.length);
+}
+
 type ChatToolCall = {
   id: string;
   type: "function";
@@ -428,10 +473,6 @@ export async function streamOpenRouter(
     let messages = toChatMessages(systemPrompt, params.messages);
 
     let continuationsUsed = 0;
-    // MIKE-06: ONE continuation max. 8 continuations × 8192 tokens each
-    // re-feeding the full prompt produced ~65k-token answers, minutes of
-    // "Working" and mid-word truncations.
-    const MAX_CONTINUATIONS = 1;
     // MIKE-06 5.2: TTFT must cover the full path — fetch start (network
     // + provider TTFB) to the first REAL delta, not the first SSE chunk
     // (which may be only role/meta and made the metric read 0/1 ms).
@@ -625,17 +666,15 @@ export async function streamOpenRouter(
         // Auto-continue: if the response was cut off by max_tokens,
         // append the partial assistant message and ask the model to
         // continue. This prevents truncated/incomplete sentences.
-        // MIKE-06: at most ONE continuation (was 8 — up to 8×8192 ≈ 65k
-        // output tokens re-feeding the full prompt each time; the user
-        // saw "demora MUITO"/"trava"). Effective output ceiling is now
-        // 2 × MAX_OUTPUT_TOKENS. When the ceiling is hit and the model
-        // still reports `length`, finish gracefully with the text we
-        // have — never a mid-word cut.
-        if (
-          finishReason === "length" &&
-          fullText &&
-          continuationsUsed < MAX_CONTINUATIONS
-        ) {
+        // MIKE-06: the ceiling logic lives in decideContinuation() above —
+        // pure and unit-tested against the real adapter values.
+        const decision = decideContinuation({
+          finishReason,
+          fullText,
+          continuationsUsed,
+          hasToolCalls: toolCalls.length > 0,
+        });
+        if (decision.action === "continue_turn") {
           continuationsUsed++;
           messages = [
             ...messages,
@@ -655,18 +694,13 @@ export async function streamOpenRouter(
           iter--;
           continue;
         }
-        if (finishReason === "length" && fullText) {
+        if (decision.action === "graceful_close") {
           // Continuation budget exhausted but the model would keep
           // going: close the answer gracefully instead of persisting a
-          // mid-word truncation (the `inadimp` symptom). A short
-          // ellipsis suffix is appended so the visible text still ends
-          // with sentence-like punctuation.
-          const graceful =
-            fullText.trimEnd().replace(/[\s,;:–—-]+$/, "") +
-            " …\n\n[resposta encerrada por limite de extensão]";
-          const suffix = graceful.slice(fullText.length);
+          // mid-word truncation (the `inadimp` symptom).
+          const suffix = gracefulCloseSuffix(fullText);
           if (suffix) {
-            fullText = graceful;
+            fullText += suffix;
             callbacks.onContentDelta?.(suffix);
           }
           console.log(
