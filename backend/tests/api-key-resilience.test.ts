@@ -31,7 +31,7 @@ describe("API Key Status Resilience", () => {
 
     it("should preserve env key status when DB query fails", async () => {
         // Set env key
-        process.env.DEEPSEEK_API_KEY = "test-env-key-12345";
+        process.env.OPENROUTER_API_KEY = "test-env-key-12345";
 
         const { getUserApiKeyStatus } = await import("../src/lib/userApiKeys");
 
@@ -51,14 +51,14 @@ describe("API Key Status Resilience", () => {
         const status = await getUserApiKeyStatus("test-user-id", mockDb as any);
 
         // Env key should still be present
-        expect(status.deepseek).toBe(true);
-        expect(status.sources.deepseek).toBe("env");
+        expect(status.openrouter).toBe(true);
+        expect(status.sources.openrouter).toBe("env");
         // Should NOT throw
         expect(status).toBeDefined();
     });
 
     it("should not throw when DB query fails", async () => {
-        process.env.DEEPSEEK_API_KEY = "test-env-key-12345";
+        process.env.OPENROUTER_API_KEY = "test-env-key-12345";
 
         const { getUserApiKeyStatus } = await import("../src/lib/userApiKeys");
 
@@ -78,7 +78,7 @@ describe("API Key Status Resilience", () => {
     });
 
     it("should return user key source when DB query succeeds and env key is absent", async () => {
-        delete process.env.DEEPSEEK_API_KEY;
+        delete process.env.OPENROUTER_API_KEY;
 
         const { getUserApiKeyStatus } = await import("../src/lib/userApiKeys");
 
@@ -87,7 +87,7 @@ describe("API Key Status Resilience", () => {
                 select: vi.fn(() => ({
                     eq: vi.fn(() => ({
                         then: (resolve: Function) =>
-                            resolve({ data: [{ provider: "deepseek" }], error: null }),
+                            resolve({ data: [{ provider: "openrouter" }], error: null }),
                     })),
                 })),
             })),
@@ -95,12 +95,12 @@ describe("API Key Status Resilience", () => {
 
         const status = await getUserApiKeyStatus("test-user-id", mockDb as any);
 
-        expect(status.deepseek).toBe(true);
-        expect(status.sources.deepseek).toBe("user");
+        expect(status.openrouter).toBe(true);
+        expect(status.sources.openrouter).toBe("user");
     });
 
     it("should return all false when no env keys and no user keys", async () => {
-        delete process.env.DEEPSEEK_API_KEY;
+        delete process.env.OPENROUTER_API_KEY;
         delete process.env.ANTHROPIC_API_KEY;
         delete process.env.CLAUDE_API_KEY;
         delete process.env.GEMINI_API_KEY;
@@ -122,13 +122,13 @@ describe("API Key Status Resilience", () => {
 
         const status = await getUserApiKeyStatus("test-user-id", mockDb as any);
 
-        expect(status.deepseek).toBe(false);
-        expect(status.claude).toBe(false);
-        expect(status.openai).toBe(false);
+        expect(status.openrouter).toBe(false);
+        expect(status.courtlistener).toBe(false);
+        expect((status as any).claude).toBeUndefined();
     });
 
     it("should prioritize env key over user key", async () => {
-        process.env.DEEPSEEK_API_KEY = "test-env-key-12345";
+        process.env.OPENROUTER_API_KEY = "test-env-key-12345";
 
         const { getUserApiKeyStatus } = await import("../src/lib/userApiKeys");
 
@@ -137,7 +137,7 @@ describe("API Key Status Resilience", () => {
                 select: vi.fn(() => ({
                     eq: vi.fn(() => ({
                         then: (resolve: Function) =>
-                            resolve({ data: [{ provider: "deepseek" }], error: null }),
+                            resolve({ data: [{ provider: "openrouter" }], error: null }),
                     })),
                 })),
             })),
@@ -146,7 +146,7 @@ describe("API Key Status Resilience", () => {
         const status = await getUserApiKeyStatus("test-user-id", mockDb as any);
 
         // Env should take priority
-        expect(status.deepseek).toBe(true);
-        expect(status.sources.deepseek).toBe("env");
+        expect(status.openrouter).toBe(true);
+        expect(status.sources.openrouter).toBe("env");
     });
 });

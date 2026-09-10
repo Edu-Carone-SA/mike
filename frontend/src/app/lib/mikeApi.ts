@@ -357,12 +357,18 @@ export type ApiKeyProvider =
     | "deepseek"
     | "courtlistener";
 export type ApiKeySource = "user" | "env" | null;
-export type ApiKeyState = Record<
-    ApiKeyProvider,
-    {
-        configured: boolean;
-        source: ApiKeySource;
-    }
+// MIKE-06: OpenRouter-only — the platform runs exclusively on OpenRouter
+// (+ courtlistener for legal research). Legacy provider keys remain in the
+// union so stored profiles keep parsing, but they are no longer listed
+// or configurable.
+export type ApiKeyState = Partial<
+    Record<
+        ApiKeyProvider,
+        {
+            configured: boolean;
+            source: ApiKeySource;
+        }
+    >
 >;
 
 export type ApiKeyStatus = Record<ApiKeyProvider, boolean> & {

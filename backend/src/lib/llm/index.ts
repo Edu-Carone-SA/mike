@@ -1,23 +1,17 @@
-import { streamClaude, completeClaudeText } from "./claude";
-import { streamGemini, completeGeminiText } from "./gemini";
-import { streamOpenAI, completeOpenAIText } from "./openai";
-import { streamDeepSeek, completeDeepSeekText } from "./deepseek";
 import { streamOpenRouter, completeOpenRouterText } from "./openrouter";
-import { providerForModel } from "./models";
 import type { StreamChatParams, StreamChatResult, UserApiKeys } from "./types";
 
 export * from "./types";
 export * from "./models";
 
+// MIKE-06: OpenRouter-only. Every model routes through the OpenRouter
+// adapter (see models.ts — providerForModel always returns "openrouter").
+// The legacy direct adapters (claude/gemini/openai/deepseek) were removed
+// from the dispatch path.
 export async function streamChatWithTools(
     params: StreamChatParams,
 ): Promise<StreamChatResult> {
-    const provider = providerForModel(params.model);
-    if (provider === "claude") return streamClaude(params);
-    if (provider === "openai") return streamOpenAI(params);
-    if (provider === "deepseek") return streamDeepSeek(params);
-    if (provider === "openrouter") return streamOpenRouter(params);
-    return streamGemini(params);
+    return streamOpenRouter(params);
 }
 
 export async function completeText(params: {
@@ -27,10 +21,5 @@ export async function completeText(params: {
     maxTokens?: number;
     apiKeys?: UserApiKeys;
 }): Promise<string> {
-    const provider = providerForModel(params.model);
-    if (provider === "claude") return completeClaudeText(params);
-    if (provider === "openai") return completeOpenAIText(params);
-    if (provider === "deepseek") return completeDeepSeekText(params);
-    if (provider === "openrouter") return completeOpenRouterText(params);
-    return completeGeminiText(params);
+    return completeOpenRouterText(params);
 }

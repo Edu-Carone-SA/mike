@@ -1,41 +1,24 @@
 import type { Provider } from "./types";
 
 // ---------------------------------------------------------------------------
-// Canonical model IDs
+// Canonical model IDs — OpenRouter ONLY (MIKE-06)
 // ---------------------------------------------------------------------------
+// The platform runs exclusively through OpenRouter: the admin (or a user
+// with a per-user key) provides an OpenRouter API key and picks models
+// from the OpenRouter catalog. Legacy direct providers (claude, gemini,
+// openai, deepseek native) were removed.
+
 // Main-chat tier (top-end) — user picks one of these per message.
-// OpenRouter models are prefixed with the provider slug (e.g. "deepseek/").
-export const CLAUDE_MAIN_MODELS = [
-    "claude-fable-5",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-] as const;
-export const GEMINI_MAIN_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-3.1-pro-preview",
-    "gemini-3-flash-preview",
-] as const;
-export const OPENAI_MAIN_MODELS = ["gpt-5.5", "gpt-5.4"] as const;
-export const DEEPSEEK_MAIN_MODELS = ["deepseek-v4-pro"] as const;
 export const OPENROUTER_MAIN_MODELS = [
     "deepseek/deepseek-v4-flash",
     "z-ai/glm-5.3",
 ] as const;
 
 // Mid-tier (used for tabular review) — user picks one in account settings.
-export const CLAUDE_MID_MODELS = ["claude-sonnet-4-6"] as const;
-export const GEMINI_MID_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview"] as const;
-export const OPENAI_MID_MODELS = ["gpt-5.4"] as const;
-export const DEEPSEEK_MID_MODELS = ["deepseek-v4-flash"] as const;
 export const OPENROUTER_MID_MODELS = ["deepseek/deepseek-v4-flash"] as const;
 
 // Low-tier (used for title generation, lightweight extractions) — user picks
 // one in account settings.
-export const CLAUDE_LOW_MODELS = ["claude-haiku-4-5"] as const;
-export const GEMINI_LOW_MODELS = ["gemini-3.1-flash-lite-preview"] as const;
-export const OPENAI_LOW_MODELS = ["gpt-5.4-lite"] as const;
-export const DEEPSEEK_LOW_MODELS = ["deepseek-v4-flash"] as const;
 export const OPENROUTER_LOW_MODELS = ["deepseek/deepseek-v4-flash"] as const;
 
 export const DEFAULT_MAIN_MODEL = "deepseek/deepseek-v4-flash";
@@ -51,20 +34,8 @@ export const OPENROUTER_FALLBACK: Record<string, string> = {
 };
 
 const ALL_MODELS = new Set<string>([
-    ...CLAUDE_MAIN_MODELS,
-    ...GEMINI_MAIN_MODELS,
-    ...OPENAI_MAIN_MODELS,
-    ...DEEPSEEK_MAIN_MODELS,
     ...OPENROUTER_MAIN_MODELS,
-    ...CLAUDE_MID_MODELS,
-    ...GEMINI_MID_MODELS,
-    ...OPENAI_MID_MODELS,
-    ...DEEPSEEK_MID_MODELS,
     ...OPENROUTER_MID_MODELS,
-    ...CLAUDE_LOW_MODELS,
-    ...GEMINI_LOW_MODELS,
-    ...OPENAI_LOW_MODELS,
-    ...DEEPSEEK_LOW_MODELS,
     ...OPENROUTER_LOW_MODELS,
 ]);
 
@@ -72,14 +43,14 @@ const ALL_MODELS = new Set<string>([
 // Provider inference
 // ---------------------------------------------------------------------------
 
+/** MIKE-06: OpenRouter-only — every known model routes through OpenRouter.
+ * Unrecognized legacy IDs (claude-*, gpt-*, gemini-*, deepseek-* without
+ * a slash) fall back to openrouter instead of throwing, so stored user
+ * preferences referencing removed models keep working (resolveModel maps
+ * them to a default before they ever get here). */
 export function providerForModel(model: string): Provider {
-    if (model.startsWith("claude")) return "claude";
-    if (model.startsWith("gemini")) return "gemini";
-    if (model.startsWith("gpt-")) return "openai";
-    if (model.startsWith("deepseek/")) return "openrouter";
-    if (model.startsWith("z-ai/")) return "openrouter";
-    if (model.startsWith("deepseek")) return "deepseek";
-    throw new Error(`Unknown model id: ${model}`);
+    void model;
+    return "openrouter";
 }
 
 export function resolveModel(id: string | null | undefined, fallback: string): string {

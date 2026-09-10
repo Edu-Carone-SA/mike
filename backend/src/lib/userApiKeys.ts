@@ -3,6 +3,10 @@ import { createServerSupabase } from "./supabase";
 import type { UserApiKeys } from "./llm";
 
 type Db = ReturnType<typeof createServerSupabase>;
+// MIKE-06: OpenRouter-only. The union keeps legacy provider strings so
+// historical encrypted key rows (stored by provider name) stay readable
+// and deletable, but only the providers in ACTIVE_PROVIDERS can be
+// listed/stored going forward.
 export type ApiKeyProvider =
     | "claude"
     | "gemini"
@@ -11,8 +15,8 @@ export type ApiKeyProvider =
     | "deepseek"
     | "courtlistener";
 export type ApiKeySource = "user" | "env" | null;
-export type ApiKeyStatus = Record<ApiKeyProvider, boolean> & {
-    sources: Record<ApiKeyProvider, ApiKeySource>;
+export type ApiKeyStatus = Partial<Record<ApiKeyProvider, boolean>> & {
+    sources: Partial<Record<ApiKeyProvider, ApiKeySource>>;
 };
 
 type EncryptedKeyRow = {
@@ -22,14 +26,7 @@ type EncryptedKeyRow = {
     auth_tag: string;
 };
 
-const PROVIDERS: ApiKeyProvider[] = [
-    "claude",
-    "gemini",
-    "openai",
-    "openrouter",
-    "deepseek",
-    "courtlistener",
-];
+const PROVIDERS: ApiKeyProvider[] = ["openrouter", "courtlistener"];
 
 function envApiKey(provider: ApiKeyProvider): string | null {
     switch (provider) {
@@ -118,18 +115,10 @@ export async function getUserApiKeyStatus(
     // database query fails, so the frontend can show env-configured
     // providers regardless of PostgREST availability.
     const status: ApiKeyStatus = {
-        claude: false,
-        gemini: false,
-        openai: false,
         openrouter: false,
-        deepseek: false,
         courtlistener: false,
         sources: {
-            claude: null,
-            gemini: null,
-            openai: null,
             openrouter: null,
-            deepseek: null,
             courtlistener: null,
         },
     };

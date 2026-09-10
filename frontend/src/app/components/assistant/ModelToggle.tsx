@@ -16,7 +16,7 @@ import type { ApiKeyState } from "@/app/lib/mikeApi";
 export interface ModelOption {
     id: string;
     label: string;
-    group: "Anthropic" | "Google" | "OpenAI" | "DeepSeek" | "OpenRouter";
+    group: "OpenRouter";
 }
 
 export const MODELS: ModelOption[] = [
@@ -30,13 +30,8 @@ export const DEFAULT_MODEL_ID = "deepseek/deepseek-v4-flash";
 
 export const ALLOWED_MODEL_IDS = new Set(MODELS.map((m) => m.id));
 
-export const GROUP_ORDER: ModelOption["group"][] = [
-    "Anthropic",
-    "Google",
-    "OpenAI",
-    "DeepSeek",
-    "OpenRouter",
-];
+// MIKE-06: OpenRouter-only — single group.
+export const GROUP_ORDER: ModelOption["group"][] = ["OpenRouter"];
 
 interface Props {
     value: string;

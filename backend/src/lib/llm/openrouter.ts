@@ -428,7 +428,14 @@ export async function streamOpenRouter(
     let messages = toChatMessages(systemPrompt, params.messages);
 
     let continuationsUsed = 0;
-    const MAX_CONTINUATIONS = 8;
+    // MIKE-06: ONE continuation max. 8 continuations × 8192 tokens each
+    // re-feeding the full prompt produced ~65k-token answers, minutes of
+    // "Working" and mid-word truncations.
+    const MAX_CONTINUATIONS = 1;
+    // MIKE-06 5.2: TTFT must cover the full path — fetch start (network
+    // + provider TTFB) to the first REAL delta, not the first SSE chunk
+    // (which may be only role/meta and made the metric read 0/1 ms).
+    const turnStart = Date.now();
     for (let iter = 0; iter < maxIter; iter++) {
       throwIfAborted(params.abortSignal);
       const response = await createChatCompletion({
@@ -464,7 +471,7 @@ export async function streamOpenRouter(
       // request so the normal error path turns the job into a terminal
       // `failed` state instead of hanging.
       const STALL_TIMEOUT_MS = 90_000;
-      const streamStart = Date.now();
+      const streamStart = turnStart;
       let timeToFirstTokenMs: number | undefined;
       let stallAbort: AbortController | null = null;
       const readWithStallTimeout = async () => {
@@ -498,9 +505,6 @@ export async function streamOpenRouter(
         throwIfAborted(params.abortSignal);
         const { done, value } = await readWithStallTimeout();
         if (done) break;
-        if (timeToFirstTokenMs === undefined) {
-          timeToFirstTokenMs = Date.now() - streamStart;
-        }
 
         const decoded = decoder.decode(value, { stream: true });
         logRawLlmStream({
@@ -540,6 +544,21 @@ export async function streamOpenRouter(
 
           const choice = event.choices?.[0];
           if (!choice?.delta) continue;
+
+          // MIKE-06 5.2: TTFT registers on the first REAL delta of any
+          // nature (content, reasoning or tool_call) — not on the first
+          // SSE chunk, which may carry only role/meta and made the
+          // metric read 0/1 ms.
+          if (
+            timeToFirstTokenMs === undefined &&
+            ((typeof choice.delta.content === "string" &&
+              choice.delta.content) ||
+              (typeof choice.delta.reasoning_content === "string" &&
+                choice.delta.reasoning_content) ||
+              choice.delta.tool_calls?.length)
+          ) {
+            timeToFirstTokenMs = Date.now() - streamStart;
+          }
 
           // Capture finish_reason for auto-continue detection
           if (choice.finish_reason) {
@@ -606,6 +625,12 @@ export async function streamOpenRouter(
         // Auto-continue: if the response was cut off by max_tokens,
         // append the partial assistant message and ask the model to
         // continue. This prevents truncated/incomplete sentences.
+        // MIKE-06: at most ONE continuation (was 8 — up to 8×8192 ≈ 65k
+        // output tokens re-feeding the full prompt each time; the user
+        // saw "demora MUITO"/"trava"). Effective output ceiling is now
+        // 2 × MAX_OUTPUT_TOKENS. When the ceiling is hit and the model
+        // still reports `length`, finish gracefully with the text we
+        // have — never a mid-word cut.
         if (
           finishReason === "length" &&
           fullText &&
@@ -615,7 +640,11 @@ export async function streamOpenRouter(
           messages = [
             ...messages,
             { role: "assistant" as const, content: fullText },
-            { role: "user" as const, content: "Continue from where you left off. Do not repeat any text you already wrote — just complete the remaining content." },
+            {
+              role: "user" as const,
+              content:
+                "Continue from where you left off. Do not repeat any text you already wrote — wrap up in a few lines and conclude the answer now.",
+            },
           ];
           // Reset for next iteration — don't duplicate the text we
           // already streamed. We keep fullText as-is since new deltas
@@ -625,6 +654,24 @@ export async function streamOpenRouter(
           // exhausted and re-generated the same XLSX five times).
           iter--;
           continue;
+        }
+        if (finishReason === "length" && fullText) {
+          // Continuation budget exhausted but the model would keep
+          // going: close the answer gracefully instead of persisting a
+          // mid-word truncation (the `inadimp` symptom). A short
+          // ellipsis suffix is appended so the visible text still ends
+          // with sentence-like punctuation.
+          const graceful =
+            fullText.trimEnd().replace(/[\s,;:–—-]+$/, "") +
+            " …\n\n[resposta encerrada por limite de extensão]";
+          const suffix = graceful.slice(fullText.length);
+          if (suffix) {
+            fullText = graceful;
+            callbacks.onContentDelta?.(suffix);
+          }
+          console.log(
+            `[llm] model=${model} output_ceiling_reached=true continuations=${continuationsUsed} completion_tokens_budget=2x${MAX_OUTPUT_TOKENS}`,
+          );
         }
         break;
       }
