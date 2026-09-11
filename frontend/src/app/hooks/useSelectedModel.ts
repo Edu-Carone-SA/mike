@@ -10,10 +10,14 @@ import {
 const STORAGE_KEY = "mike.selectedModel";
 
 function readStored(allowed: Set<string>): string {
-    if (typeof window === "undefined") return DEFAULT_MODEL_ID;
+    // MIKE-07: with an admin-configured list, the first admin model is the
+    // default for new/invalid selections — the built-in DEFAULT_MODEL_ID
+    // may not be allowed.
+    const fallback = [...allowed][0] ?? DEFAULT_MODEL_ID;
+    if (typeof window === "undefined") return fallback;
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw && allowed.has(raw)) return raw;
-    return DEFAULT_MODEL_ID;
+    return fallback;
 }
 
 /**
