@@ -24,7 +24,7 @@ import {
     type TRCitationAnnotation,
 } from "@/app/lib/mikeApi";
 import type { AssistantEvent, ColumnConfig, Document } from "../shared/types";
-import { ModelToggle } from "../assistant/ModelToggle";
+import { ModelToggle, resolveActiveModelId } from "../assistant/ModelToggle";
 import { ApiKeyMissingPopup } from "../popups/ApiKeyMissingPopup";
 import { PreResponseWrapper } from "../assistant/PreResponseWrapper";
 import { useUserProfile } from "@/app/contexts/UserProfileContext";
@@ -777,7 +777,12 @@ export function TRChatPanel({
 }: Props) {
     const { profile, updateModelPreference } = useUserProfile();
     const apiKeys = profile?.apiKeys;
-    const currentModel = profile?.tabularModel ?? "deepseek/deepseek-v4-flash";
+    // MIKE-07: a stored tabular preference outside the active (admin) list
+    // resolves to the first active model — never an out-of-list id.
+    const currentModel = resolveActiveModelId(
+        profile?.tabularModel,
+        profile?.availableModels,
+    );
     const [apiKeyModalProvider, setApiKeyModalProvider] =
         useState<ModelProvider | null>(null);
     const [chats, setChats] = useState<TRChat[]>([]);
