@@ -59,6 +59,21 @@ export function allowedModelIds(
     return new Set(options.map((m) => m.id));
 }
 
+/**
+ * MIKE-07 follow-up: a stored preference that is not in the active list
+ * (e.g. a built-in id saved before the admin configured a different list)
+ * resolves to the first active model instead of rendering as empty /
+ * dispatching an out-of-list model.
+ */
+export function resolveActiveModelId(
+    saved: string | null | undefined,
+    availableModels?: Array<{ id: string; name?: string }> | null,
+): string {
+    const options = platformModelOptions(availableModels);
+    if (saved && options.some((m) => m.id === saved)) return saved;
+    return options[0]?.id ?? DEFAULT_MODEL_ID;
+}
+
 interface Props {
     value: string;
     onChange: (id: string) => void;

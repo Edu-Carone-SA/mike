@@ -15,6 +15,7 @@ import type { ApiKeyState } from "@/app/lib/mikeApi";
 import {
     GROUP_ORDER,
     platformModelOptions,
+    resolveActiveModelId,
     type ModelOption,
 } from "@/app/components/assistant/ModelToggle";
 import {
@@ -32,7 +33,8 @@ type ModelPreferenceField = "titleModel" | "tabularModel";
 export default function ModelPreferencesPage() {
     const { profile, updateModelPreference } = useUserProfile();
     // MIKE-07: the admin-configured platform list drives the dropdowns;
-    // empty list falls back to the built-in catalog.
+    // empty list falls back to the built-in catalog. A stored preference
+    // outside the active list resolves to the first active model.
     const activeOptions: ModelOption[] = platformModelOptions(
         profile?.availableModels,
     );
@@ -46,6 +48,17 @@ export default function ModelPreferencesPage() {
         Partial<Record<ModelPreferenceField, string>>
     >({});
     const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Computed after state declarations — a stored preference outside the
+    // active list resolves to the first active model.
+    const titleValue = resolveActiveModelId(
+        optimisticValues.titleModel ?? profile?.titleModel,
+        profile?.availableModels,
+    );
+    const tabularValue = resolveActiveModelId(
+        optimisticValues.tabularModel ?? profile?.tabularModel,
+        profile?.availableModels,
+    );
 
     useEffect(() => {
         return () => {
@@ -93,12 +106,7 @@ export default function ModelPreferencesPage() {
                         Used for naming chats and other lightweight titles.
                     </p>
                     <ModelPreferenceDropdown
-                        value={
-                            optimisticValues.titleModel ??
-                            profile?.titleModel ??
-                            activeOptions[0]?.id ??
-                            "deepseek/deepseek-v4-flash"
-                        }
+                        value={titleValue}
                         options={activeOptions}
                         apiKeys={profile?.apiKeys}
                         isSaving={savingField === "titleModel"}
@@ -116,12 +124,7 @@ export default function ModelPreferencesPage() {
                         to reduce token costs.
                     </p>
                     <ModelPreferenceDropdown
-                        value={
-                            optimisticValues.tabularModel ??
-                            profile?.tabularModel ??
-                            activeOptions[0]?.id ??
-                            "deepseek/deepseek-v4-flash"
-                        }
+                        value={tabularValue}
                         options={activeOptions}
                         apiKeys={profile?.apiKeys}
                         isSaving={savingField === "tabularModel"}

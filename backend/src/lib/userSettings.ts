@@ -7,7 +7,10 @@ import {
     type UserApiKeys,
 } from "./llm";
 import { getUserApiKeys as getStoredUserApiKeys } from "./userApiKeys";
-import { getPlatformOpenRouterKey } from "./platformSettings";
+import {
+    getPlatformSettings,
+    getPlatformOpenRouterKey,
+} from "./platformSettings";
 
 export type UserModelSettings = {
     title_model: string;
@@ -35,9 +38,25 @@ export async function getUserModelSettings(
         .single();
     const api_keys = await getStoredUserApiKeys(userId, client);
 
+    // MIKE-07: with an admin-configured platform list, a stored preference
+    // outside that list (e.g. a built-in id saved before the admin list
+    // existed) resolves to the first admin model — the same rule the chat
+    // dispatch applies.
+    let allowed: string[] = [];
+    try {
+        const platform = await getPlatformSettings(client);
+        allowed = platform.availableModels.map((m) => m.id);
+    } catch {
+        allowed = [];
+    }
+    const resolveAgainstList = (saved: string | null | undefined, fallback: string): string => {
+        if (allowed.length === 0) return resolveModel(saved, fallback);
+        return saved && allowed.includes(saved) ? saved : allowed[0];
+    };
+
     return {
-        title_model: resolveModel(data?.title_model, resolveTitleModel(api_keys)),
-        tabular_model: resolveModel(data?.tabular_model, DEFAULT_TABULAR_MODEL),
+        title_model: resolveAgainstList(data?.title_model, resolveTitleModel(api_keys)),
+        tabular_model: resolveAgainstList(data?.tabular_model, DEFAULT_TABULAR_MODEL),
         legal_research_us:
             (data as { legal_research_us?: boolean | null } | null)
                 ?.legal_research_us !== false,
