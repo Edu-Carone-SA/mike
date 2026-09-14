@@ -99,6 +99,70 @@ export function useAssistantChat({
 
   const eventsRef = useRef<AssistantEvent[]>([]);
   const latestJobIdRef = useRef<string | null>(null);
+  // P0-4 (QA 14/09/2026): client-side stream-inactivity watchdog. When the
+  // browser receives no byte for STREAM_INACTIVITY_TIMEOUT_MS while a turn
+  // is loading, the UI must leave the ambiguous "Working" state with a
+  // typed, actionable event — never stay partial forever. Server-side
+  // stall is handled by the backend watchdog (90s); this covers
+  // transport/client-side stalls the server cannot see.
+  const STREAM_INACTIVITY_TIMEOUT_MS = 30_000;
+  const streamInactivityTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const lastStreamActivityRef = useRef<number>(0);
+  const streamInterruptedRef = useRef(false);
+
+  const clearStreamInactivityWatchdog = () => {
+    if (streamInactivityTimerRef.current) {
+      clearTimeout(streamInactivityTimerRef.current);
+      streamInactivityTimerRef.current = null;
+    }
+  };
+
+  const markStreamActivity = () => {
+    lastStreamActivityRef.current = Date.now();
+  };
+
+  /** Emits the typed stream_interrupted event and releases the loading state. */
+  const interruptStream = () => {
+    if (streamInterruptedRef.current) return;
+    streamInterruptedRef.current = true;
+    clearStreamInactivityWatchdog();
+    finalizeAllStreaming();
+    const message =
+      "A conexão de transmissão foi interrompida. A resposta pode ter sido concluída no servidor — recarregue o chat para recuperar o conteúdo completo.";
+    eventsRef.current = [
+      ...eventsRef.current,
+      {
+        type: "stream_interrupted",
+        reason: "stream_inactivity" as const,
+        message,
+        at: new Date().toISOString(),
+      },
+    ];
+    const snapshot = [...eventsRef.current];
+    updateLatestAssistantMessage((message_) => ({
+      ...message_,
+      events: snapshot,
+    }));
+    setIsResponseLoading(false);
+    setIsLoadingCitations(false);
+    // Best effort: the server may have persisted the full answer —
+    // aborting the (stalled) fetch frees the reader.
+    abortControllerRef.current?.abort();
+  };
+
+  const armStreamInactivityWatchdog = () => {
+    clearStreamInactivityWatchdog();
+    streamInactivityTimerRef.current = setTimeout(() => {
+      if (
+        Date.now() - lastStreamActivityRef.current >=
+        STREAM_INACTIVITY_TIMEOUT_MS
+      ) {
+        interruptStream();
+      }
+    }, STREAM_INACTIVITY_TIMEOUT_MS);
+  };
 
   const updateLatestAssistantMessage = (
     updater: (message: Message) => Message,
@@ -280,6 +344,10 @@ export function useAssistantChat({
     if (!message.content.trim()) return null;
 
     setIsResponseLoading(true);
+    // P0-4: arm the inactivity watchdog for this turn.
+    streamInterruptedRef.current = false;
+    markStreamActivity();
+    armStreamInactivityWatchdog();
 
     const lastMessage = messages[messages.length - 1];
     const isMessageAlreadyAdded =
@@ -408,6 +476,9 @@ export function useAssistantChat({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
+        // P0-4: any byte received proves the stream is alive.
+        markStreamActivity();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
@@ -1261,6 +1332,8 @@ export function useAssistantChat({
       finalizeAllStreaming();
       setIsResponseLoading(false);
       setIsLoadingCitations(false);
+      // P0-4: turn finished cleanly — disarm the inactivity watchdog.
+      clearStreamInactivityWatchdog();
 
       const finalChatId = streamedChatId || chatId || null;
       if (finalChatId && finalChatId !== chatId) {
@@ -1294,7 +1367,20 @@ export function useAssistantChat({
 
       return streamedChatId || null;
     } catch (error: unknown) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (
+        error instanceof Error &&
+        error.name === "AbortError" &&
+        // P0-4: an abort raised by the inactivity watchdog was already
+        // surfaced as a typed stream_interrupted event — it is NOT a user
+        // cancellation and must not append "Cancelled by user".
+        streamInterruptedRef.current
+      ) {
+        // Already handled by interruptStream(): typed event emitted,
+        // loading released, reader freed. Nothing further to do.
+      } else if (
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
         finalizeAllStreaming();
         eventsRef.current = appendCancellationEvent(eventsRef.current);
         setMessages((prev) => {
@@ -1357,11 +1443,15 @@ export function useAssistantChat({
 
       setIsResponseLoading(false);
       setIsLoadingCitations(false);
+      // P0-4: turn ended in error/cancel — disarm the watchdog.
+      clearStreamInactivityWatchdog();
       return null;
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
+      // P0-4: belt-and-suspenders — no timer outlives the turn.
+      clearStreamInactivityWatchdog();
     }
   };
 

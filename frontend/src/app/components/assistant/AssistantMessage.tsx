@@ -378,6 +378,33 @@ export function AssistantMessage({
                 </EventBlock>
             );
         }
+        if (event.type === "stream_interrupted") {
+            // P0-4: client-side inactivity watchdog — typed, actionable state
+            // instead of an eternal "Working" with a partial answer.
+            return (
+                <EventBlock
+                    key={globalIdx}
+                    showConnector={showConnector}
+                    dotColor="amber"
+                    data-testid="stream-interrupted-block"
+                >
+                    <span className="font-medium text-amber-600">
+                        Transmissão interrompida
+                    </span>
+                    <p className="mt-1 text-sm text-gray-600" role="alert">
+                        {event.message}
+                    </p>
+                    <button
+                        type="button"
+                        data-testid="stream-reload-button"
+                        className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                        onClick={() => window.location.reload()}
+                    >
+                        Recarregar chat
+                    </button>
+                </EventBlock>
+            );
+        }
         if (event.type === "job_paused") {
             // QA UX-STATE-02: only offer resume while the job is actually
             // paused. After a successful resume the job reaches completed —
@@ -895,6 +922,30 @@ export function AssistantMessage({
                                 </PreResponseWrapper>
                             );
                         })}
+                        {/* P0 fix (a) — QA 14/09/2026: a plain answer (no tool
+                            events, so no event group and no wrapper) ended
+                            with NO visible terminal marker; the QA read it as
+                            an eternal in-progress state. Show the standard
+                            wrapper with the terminal label once the answer
+                            is done, so completion is always observable. */}
+                        {!isStreaming &&
+                            !hasError &&
+                            events.length > 0 &&
+                            !groups.some((g) => g.kind === "pre") && (
+                                <PreResponseWrapper
+                                    key="plain-answer-terminal"
+                                    stepCount={1}
+                                    shouldMinimize
+                                    isStreaming={false}
+                                    terminalState="completed"
+                                >
+                                    <EventBlock showConnector={false}>
+                                        <span className="font-medium">
+                                            Resposta concluída
+                                        </span>
+                                    </EventBlock>
+                                </PreResponseWrapper>
+                            )}
                         {/* Bulk accept/reject + per-edit cards — below the
                             response content, only after streaming stops,
                             rendered above the download card. */}

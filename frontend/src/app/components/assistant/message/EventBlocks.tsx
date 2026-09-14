@@ -32,20 +32,23 @@ export function EventBlock({
     isStreaming,
     dotColor = "green",
     children,
+    ...rest
 }: {
     showConnector?: boolean;
     isStreaming?: boolean;
-    dotColor?: "green" | "gray" | "red";
+    dotColor?: "green" | "gray" | "red" | "amber";
     children: ReactNode;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
     const dotColorClass =
         dotColor === "green"
             ? "bg-green-400 shadow-[0_1px_3px_rgba(15,23,42,0.15),inset_0_1px_0_rgba(255,255,255,0.5)]"
             : dotColor === "red"
               ? "bg-red-400 shadow-[0_1px_3px_rgba(15,23,42,0.15),inset_0_1px_0_rgba(255,255,255,0.5)]"
-              : "bg-gray-300 shadow-[0_1px_3px_rgba(15,23,42,0.15),inset_0_1px_0_rgba(255,255,255,0.35)]";
+              : dotColor === "amber"
+                ? "bg-amber-400 shadow-[0_1px_3px_rgba(15,23,42,0.15),inset_0_1px_0_rgba(255,255,255,0.5)]"
+                : "bg-gray-300 shadow-[0_1px_3px_rgba(15,23,42,0.15),inset_0_1px_0_rgba(255,255,255,0.35)]";
     return (
-        <div className="flex items-start text-sm font-serif text-gray-500 relative">
+        <div className="flex items-start text-sm font-serif text-gray-500 relative" {...rest}>
             {showConnector && <EventConnector />}
             {isStreaming ? (
                 <div className="mt-2 w-1.5 h-1.5 shrink-0 rounded-full border border-gray-400 border-t-transparent animate-spin" />
