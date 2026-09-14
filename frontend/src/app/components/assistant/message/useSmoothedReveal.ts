@@ -18,6 +18,9 @@ export function useSmoothedReveal(text: string, active: boolean): string {
 
     useEffect(() => {
         if (!active) {
+            // Keep the ref in sync so a re-activation resumes from the
+            // right position; the full-text render when inactive is
+            // handled in the return statement below (P0 14/09/2026).
             revealedFloat.current = text.length;
             return;
         }
@@ -55,6 +58,13 @@ export function useSmoothedReveal(text: string, active: boolean): string {
         };
     }, [text.length, active]);
 
+    // P0 (QA 14/09/2026): when the final content chunk arrives in the same
+    // TCP batch as citations + [DONE] — the norm for short answers — `active`
+    // flips false before the reveal animation catches up. The !active branch
+    // above used to sync the ref but NOT the revealedInt state, freezing the
+    // render on a mid-word prefix ("STA" / "STAT") under a "Completed" label
+    // until a reload. An inactive reveal must show the full text immediately,
+    // unconditionally.
+    if (!active) return text;
     return text.slice(0, Math.min(revealedInt, text.length));
 }
-
