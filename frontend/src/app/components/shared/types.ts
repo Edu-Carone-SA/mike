@@ -93,6 +93,13 @@ export type AssistantEvent =
   | { type: "error"; message: string }
   | { type: "cancelled"; reason: string; at: string }
   | {
+      /** P0-4 (QA 14/09/2026): client-side stream-inactivity watchdog fired. */
+      type: "stream_interrupted";
+      reason: "stream_inactivity";
+      message: string;
+      at: string;
+    }
+  | {
       /** Sprint 1: tool budget exhausted — resumable, not an error. */
       type: "job_paused";
       reason: string;
