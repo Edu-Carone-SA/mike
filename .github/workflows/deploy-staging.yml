@@ -294,7 +294,9 @@ jobs:
                 {"name": "PORT", "value": "3001"},
                 {"name": "FRONTEND_URL", "value": "${STAGING_URL}"},
                 {"name": "COMMIT_SHA", "value": "${COMMIT_SHA}"},
-                {"name": "GITHUB_RUN_ID", "value": "${RUN_ID}"}
+                {"name": "GITHUB_RUN_ID", "value": "${RUN_ID}"},
+                {"name": "RATE_LIMIT_CHAT_MAX", "value": "120"},
+                {"name": "RATE_LIMIT_CHAT_CREATE_MAX", "value": "120"}
               ],
               "healthCheck": {
                 "command": ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"],

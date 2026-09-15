@@ -622,7 +622,22 @@ export async function runLLMStream(params: {
   // calls without a final assistant message; that flag is the source of
   // truth. Keep the empty-content check as a secondary safety net.
   const contentEvents = events.filter((e) => e.type === "content");
-  if (streamResult?.exhaustedToolLoop || (!fullText && contentEvents.length === 0)) {
+  // P0 QA 14/09/2026: the old secondary safety net
+  // (!fullText && contentEvents.length === 0) mislabeled a thinking-only
+  // model response (tool_calls=0, no tools ran) as a tool-budget pause —
+  // 4/30 trivial GLM turns showed "Análise pausada" for a one-line
+  // question. A pause now requires a REAL exhausted tool loop; an empty
+  // response with no tool work surfaces as an explicit typed error
+  // instead (retry already attempted by the adapter).
+  if (streamResult?.emptyResponse && contentEvents.length === 0) {
+    const message =
+      "O modelo não produziu resposta visível para esta pergunta. Tente enviar novamente.";
+    events.push({ type: "error", message });
+    write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+    write("data: [DONE]\n\n");
+    return { fullText: "", events, citations: [] };
+  }
+  if (streamResult?.exhaustedToolLoop) {
     if (job) {
       // Sprint 1: typed pause instead of a false failure. The client can
       // offer resume / reduce scope / labelled partial. Exactly one

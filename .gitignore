@@ -18,6 +18,11 @@ next-env.d.ts
 .vercel
 coverage
 
+# Playwright artifacts (never commit screenshots/traces)
+frontend/e2e-results
+frontend/playwright-report
+frontend/test-results
+
 # Supabase CLI local state
 supabase/.temp
 supabase/.branches

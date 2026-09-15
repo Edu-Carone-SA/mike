@@ -19,6 +19,7 @@ import { searchRouter } from "./routes/search";
 import { validateEnv, getEnv } from "./lib/env";
 import { checkSupabaseConnectivity, createServerSupabase } from "./lib/supabase";
 import { checkStorageConnectivity } from "./lib/storage";
+import crypto from "node:crypto";
 
 // Validate environment at startup. Fails fast if required secrets are missing or unsafe.
 validateEnv();
@@ -47,6 +48,7 @@ function makeLimiter(options: {
   windowMs: number;
   max: number;
   message?: string;
+  scope?: string;
 }) {
   return rateLimit({
     windowMs: options.windowMs,
@@ -54,9 +56,27 @@ function makeLimiter(options: {
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === "OPTIONS",
-    message: {
-      detail:
-        options.message ?? "Too many requests. Please try again later.",
+    // P0 QA 14/09/2026: a bare 429 body gave the QA no way to
+    // distinguish scopes or know when to retry. Emit Retry-After
+    // (rateLimit's standardHeaders set it already — make it explicit),
+    // the limit scope and the request id so support can correlate.
+    handler: (req, res) => {
+      const retryAfterSec = Math.ceil(options.windowMs / 1000);
+      const requestId = (req as { requestId?: string }).requestId
+        ?? crypto.randomUUID();
+      res.status(429);
+      res.setHeader("Retry-After", String(retryAfterSec));
+      res.setHeader("X-RateLimit-Scope", options.scope ?? "global");
+      res.setHeader("X-Request-Id", requestId);
+      res.json({
+        detail:
+          options.message ?? "Too many requests. Please try again later.",
+        scope: options.scope ?? "global",
+        limit: options.max,
+        windowMs: options.windowMs,
+        retryAfterSeconds: retryAfterSec,
+        request_id: requestId,
+      });
     },
   });
 }
@@ -70,6 +90,7 @@ const chatLimiter = makeLimiter({
   windowMs: minutes(envInt("RATE_LIMIT_CHAT_WINDOW_MINUTES", 15)),
   max: envInt("RATE_LIMIT_CHAT_MAX", 30),
   message: "Too many chat requests. Please try again later.",
+  scope: "chat",
 });
 
 const chatCreateLimiter = makeLimiter({
