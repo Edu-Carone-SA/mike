@@ -13,6 +13,7 @@ import {
   type McpToolEvent,
 } from "../../mcpConnectors";
 import { createServerSupabase } from "../../supabase";
+import { SYSTEM_WORKFLOW_IDS } from "../../systemWorkflows";
 import {
   type DocStore,
   type DocIndex,
@@ -664,7 +665,11 @@ export async function runToolCalls(
         items: event.items,
         hasAttachedDocuments:
           docStore.size > 0 || Object.keys(docIndex ?? {}).length > 0,
-        hasWorkflow: (workflowStore?.size ?? 0) > 0,
+        // P0 QA (root cause, 16/09/2026): store size always >= 10
+        // (built-ins seeded) — must be "user selected a workflow".
+        hasWorkflow: [...(workflowStore?.keys() ?? [])].some(
+          (id) => !SYSTEM_WORKFLOW_IDS.has(id),
+        ),
       });
       if (allowPause && event.items.length > 0) {
         askInputsEvents.push(event);

@@ -236,11 +236,24 @@ export async function runLLMStream(params: {
   const mcpTools = await buildUserMcpTools(userId, db);
   const hasAttachedDocuments =
     docStore.size > 0 || Object.keys(docIndex).length > 0;
-  const hasWorkflow = (workflowStore?.size ?? 0) > 0;
-  // P0 QA 15/09/2026: do not even advertise ask_inputs on a turn with no
-  // document and no workflow — GLM used the picker to "clarify" a fully
-  // specified one-line sentinel (chat d5b8e519 R25).
-  const chatTools = hasAttachedDocuments || hasWorkflow
+  // P0 QA 15/09/2026 + root cause 16/09/2026: do not advertise ask_inputs
+  // on a turn with no document and no SELECTED workflow — GLM used the
+  // picker to "clarify" a fully specified sentinel (chat d5b8e519 R25).
+  // workflowSelected is computed below from rawMsgs (the "[Workflow:"
+  // marker buildMessages injects only for user-selected workflows; the
+  // workflowStore alone is useless here — it ALWAYS contains the 10
+  // built-ins seeded by buildWorkflowStore).
+  // P0 QA 15/09/2026 + root cause 16/09/2026: do not advertise ask_inputs
+  // on a turn with no document and no SELECTED workflow — GLM used the
+  // picker to "clarify" a fully specified sentinel (chat d5b8e519 R25).
+  // The "[Workflow:" marker is injected by buildMessages ONLY for
+  // user-selected workflows; workflowStore alone is useless here — it
+  // ALWAYS contains the 10 built-ins seeded by buildWorkflowStore.
+  const rawMsgs = apiMessages as { role: string; content: string | null }[];
+  const workflowSelected = rawMsgs.some(
+    (m) => m.role === "user" && (m.content ?? "").includes("[Workflow:"),
+  );
+  const chatTools = hasAttachedDocuments || workflowSelected
     ? TOOLS
     : TOOLS.filter((t) => t.function.name !== "ask_inputs");
   const baseTools = [...chatTools, ...researchTools, ...WORKFLOW_TOOLS];
@@ -250,7 +263,6 @@ export async function runLLMStream(params: {
 
   // Extract system prompt; pass remaining turns to the adapter as
   // plain user/assistant messages.
-  const rawMsgs = apiMessages as { role: string; content: string | null }[];
   const systemPrompt =
     rawMsgs[0]?.role === "system" ? (rawMsgs[0].content ?? "") : "";
   // QA I18 (Onda 3): user messages are predominantly PT-BR and users
