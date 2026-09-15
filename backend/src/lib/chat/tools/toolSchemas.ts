@@ -124,7 +124,7 @@ export const TOOLS = [
     function: {
       name: "ask_inputs",
       description:
-        "Ask the user for one or more decisions, clarifications, or document uploads before continuing. Use this when guessing would materially affect the answer or when required documents have not been attached. Put all needed questions and document requests in one items array. After calling ask_inputs, do not continue the substantive task until the user responds in a later message.",
+        "Ask the user for one or more decisions, clarifications, or document uploads before continuing. Use this when guessing would materially affect the answer or when required documents have not been attached. Do not use this for a fully specified instruction (the user already gave the exact answer to produce, or no document/workflow is in play). Put all needed questions and document requests in one items array. After calling ask_inputs, do not continue the substantive task until the user responds in a later message.",
       parameters: {
         type: "object",
         properties: {
