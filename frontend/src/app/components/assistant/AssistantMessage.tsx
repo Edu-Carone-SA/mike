@@ -846,12 +846,19 @@ export function AssistantMessage({
                             );
                             const subsequentContent = hasContentAfter(gIdx);
                             const pendingAskInput = hasPendingAskInput(g);
+                            // P1 QA 15/09/2026 (reaceite #99): a persisted
+                            // ask_inputs without a response kept the wrapper
+                            // in "Working" forever even though the job was
+                            // terminal (`completed`). An unanswered picker is
+                            // an ACTIONABLE state, not an in-flight stream:
+                            // keep the group open, but the spinner label must
+                            // follow the terminal state.
                             const wrapperIsStreaming =
                                 g.events.some(
                                     (event) =>
                                         "isStreaming" in event &&
                                         !!event.isStreaming,
-                                ) || pendingAskInput;
+                                );
                             // QA UX-STATE-01 (Onda 5): derive the wrapper label
                             // from the terminal state of the WHOLE assistant
                             // message, not just this group. When the run ends

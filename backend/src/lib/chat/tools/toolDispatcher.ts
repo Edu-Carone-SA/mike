@@ -1597,17 +1597,28 @@ export async function runToolCalls(
           const integrityBlocked = result.error?.includes(
             "draft-integrity check",
           );
+          // P1 QA 15/09/2026 (reaceite #99): repeated anchor failures
+          // ("Ambiguous match", missing context) also looped the tool
+          // budget away with no progress. Same shape as INT-02: terminal
+          // for this edit attempt — refine-anchor retries belong to a NEW
+          // user-confirmed edit, not to silent model retries.
+          const anchorBlocked =
+            !integrityBlocked &&
+            !!result.error &&
+            (/ambiguous/i.test(result.error) ||
+              /not found|no match/i.test(result.error));
           toolResults.push({
             role: "tool",
             tool_call_id: tc.id,
             content: JSON.stringify({
               ok: false,
               error: result.error,
-              ...(integrityBlocked
+              ...(integrityBlocked || anchorBlocked
                 ? {
                     non_retryable: true,
-                    next_required_action:
-                      "This edit is blocked by the draft-integrity check and retrying it will always fail. Do NOT call edit_document again with this or equivalent structural edits. Instead, tell the user in PT-BR exactly which structural content the edit would lose (from the error above) and that the document was left unchanged.",
+                    next_required_action: integrityBlocked
+                      ? "This edit is blocked by the draft-integrity check and retrying it will always fail. Do NOT call edit_document again with this or equivalent structural edits. Instead, tell the user in PT-BR exactly which structural content the edit would lose (from the error above) and that the document was left unchanged."
+                      : "This edit could not be anchored in the document (ambiguous or missing match). Do NOT retry the same edit_document call. Report the anchor failure to the user in PT-BR, quote the exact text you tried to anchor on, and ask them to confirm a unique excerpt to target.",
                   }
                 : {}),
             }),
