@@ -177,7 +177,21 @@ export async function startOrResumeJob(params: {
             },
         })}\n\n`,
     );
-    return { job: plannedJob, resumed: false, priorBatches: 0 };
+    // P0 QA 15/09/2026 (F02, job 080cc519): a tool-less turn never fires
+    // onToolBatchEnd, so the job would stay in `planning` and the final
+    // transition `running -> completed` would match zero rows after the
+    // content was already delivered. The standalone route (chat.ts) has
+    // always transitioned planning -> running right after the plan; the
+    // shared runner now does the same for BOTH chat routes.
+    const runningJob = await transitionAnalysisJob(
+        db,
+        job.id,
+        "running",
+        {
+            expectFrom: "planning",
+        },
+    );
+    return { job: runningJob, resumed: false, priorBatches: 0 };
 }
 
 /**
@@ -219,7 +233,10 @@ export async function finalizeJobAfterStream(params: {
         return "paused";
     }
     const doneRow = await transitionAnalysisJob(db, job.id, "completed", {
-        expectFrom: "running",
+        // P0 QA 15/09/2026 (F02): a tool-less turn may have no tool batches,
+        // so the job can still be in a pre-running state when the content
+        // was already delivered. Finalize from the job's actual state.
+        expectFrom: job.state === "running" ? "running" : job.state,
     });
     logJobEvent({
         event: "completed",
