@@ -77,4 +77,11 @@ export type StreamChatResult = {
     /** True when the tool loop hit maxIterations without a final
      * assistant message — the run must be treated as a failure. */
     exhaustedToolLoop?: boolean;
+    /** True when the model returned NO visible content at all (e.g.
+     * thinking-only responses) and even the one no-tools synthesis
+     * retry produced nothing. Distinct from exhaustedToolLoop: an empty
+     * response must surface as an explicit error, never as a tool-budget
+     * pause (QA P0 14/09/2026: 4/30 trivial GLM turns paused with
+     * tool_calls=0). */
+    emptyResponse?: boolean;
 };

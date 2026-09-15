@@ -447,6 +447,20 @@ async function createChatCompletion(params: {
   throw lastError ?? new Error("OpenRouter request failed after retries");
 }
 
+/**
+ * P0 QA 14/09/2026: a thinking-only first iteration (no visible content,
+ * no tool calls) used to fall through with fullText="" and get mislabeled
+ * as a tool-budget pause. Retry exactly once, on the first iteration,
+ * when nothing visible was produced and no tools ran.
+ */
+export function shouldRetryEmptyVisible(opts: {
+  fullText: string;
+  iter: number;
+  toolCallCount: number;
+}): boolean {
+  return !opts.fullText && opts.iter === 0 && opts.toolCallCount === 0;
+}
+
 export async function streamOpenRouter(
   params: StreamChatParams,
 ): Promise<StreamChatResult> {
@@ -461,6 +475,7 @@ export async function streamOpenRouter(
   } = params;
   const maxIter = params.maxIterations ?? 10;
   let exhaustedToolLoop = false;
+  let emptyResponse = false;
   const key = apiKey(apiKeys?.openrouter);
   const chatTools = toChatTools(tools);
   let fullText = "";
@@ -663,6 +678,61 @@ export async function streamOpenRouter(
       const toolCalls = parseAccumulatedToolCalls(toolCallAccumulators);
 
       if (!toolCalls.length || !runTools) {
+        // P0 QA 14/09/2026: a thinking-only response (reasoning_content
+        // but no visible content, tool_calls=0) used to fall through with
+        // fullText="" — the stream gate then mislabeled it as a tool-budget
+        // pause (4/30 trivial GLM turns paused with tool_calls=0). Spend
+        // ONE no-tools call asking for the visible answer; only if that
+        // also yields nothing is the turn flagged emptyResponse (explicit
+        // error downstream, never a pause).
+        if (shouldRetryEmptyVisible({ fullText, iter, toolCallCount: toolCalls.length })) {
+          const synthResponse = await createChatCompletion({
+            model,
+            messages: [
+              ...messages,
+              {
+                role: "user" as const,
+                content:
+                  "Sua resposta anterior não contém texto visível. Responda AGORA, em português do Brasil, com o texto final direto ao ponto, sem raciocínio interno.",
+              },
+            ],
+            stream: true,
+            apiKey: key,
+            signal: params.abortSignal,
+            enableThinking: false,
+          });
+          if (synthResponse.body) {
+            const synthReader = synthResponse.body.getReader();
+            const synthDecoder = new TextDecoder();
+            let synthBuffer = "";
+            while (true) {
+              throwIfAborted(params.abortSignal);
+              const { done, value } = await synthReader.read();
+              if (done) break;
+              synthBuffer += synthDecoder.decode(value, { stream: true });
+              const extractedSynth = extractSseJson(synthBuffer);
+              synthBuffer = extractedSynth.rest;
+              for (const ev of extractedSynth.events as ChatStreamEvent[]) {
+                const c = ev.choices?.[0];
+                if (
+                  c?.delta &&
+                  typeof c.delta.content === "string" &&
+                  c.delta.content
+                ) {
+                  fullText += c.delta.content;
+                  callbacks.onContentDelta?.(c.delta.content);
+                }
+              }
+            }
+          }
+          if (!fullText) {
+            emptyResponse = true;
+          }
+          console.log(
+            `[llm] model=${model} empty_response_retry=${fullText ? "recovered" : "still_empty"}`,
+          );
+          break;
+        }
         // Auto-continue: if the response was cut off by max_tokens,
         // append the partial assistant message and ask the model to
         // continue. This prevents truncated/incomplete sentences.
@@ -828,7 +898,7 @@ export async function streamOpenRouter(
     }
 
     await rawStreamRecorder?.flush("completed");
-    return { fullText, exhaustedToolLoop };
+    return { fullText, exhaustedToolLoop, emptyResponse };
   } catch (error) {
     await rawStreamRecorder?.flush("error", error);
     throw error;
