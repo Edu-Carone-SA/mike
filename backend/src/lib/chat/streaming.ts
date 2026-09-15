@@ -196,6 +196,8 @@ export async function runLLMStream(params: {
      * job_status events. Optional to keep existing callers compatible.
      */
     jobId?: string;
+    chatId?: string | null;
+    requestId?: string | null;
     /** Latest checkpoint id at pause time, if any. */
     checkpointId?: () => string | null;
     /**
@@ -412,6 +414,9 @@ export async function runLLMStream(params: {
       apiKeys,
       enableThinking: false,
       abortSignal: signal,
+      chatId: job?.chatId ?? null,
+      jobId: job?.jobId ?? null,
+      requestId: job?.requestId ?? null,
       callbacks: {
         onContentDelta: (delta) => {
           iterText += delta;

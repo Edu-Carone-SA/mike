@@ -298,7 +298,7 @@ export class DsmlContentFilter {
  * and — when the provider reports it — token usage. Field order is stable so
  * Logs Insights queries can filter on `model=` / `status=` / `fallback=`.
  */
-function logLlmCall(fields: {
+export function formatLlmCallLine(fields: {
   model: string;
   status: number | "error";
   durationMs: number;
@@ -308,7 +308,10 @@ function logLlmCall(fields: {
   completionTokens?: number;
   contextTokens?: number;
   timeToFirstTokenMs?: number;
-}) {
+  chatId?: string | null;
+  jobId?: string | null;
+  requestId?: string | null;
+}): string {
   const parts = [
     `[llm] model=${fields.model}`,
     `status=${fields.status}`,
@@ -324,7 +327,14 @@ function logLlmCall(fields: {
     parts.push(`context_tokens=${fields.contextTokens}`);
   if (fields.timeToFirstTokenMs !== undefined)
     parts.push(`time_to_first_token_ms=${fields.timeToFirstTokenMs}`);
-  console.log(parts.join(" "));
+  if (fields.chatId) parts.push(`chat_id=${fields.chatId}`);
+  if (fields.jobId) parts.push(`job_id=${fields.jobId}`);
+  if (fields.requestId) parts.push(`request_id=${fields.requestId}`);
+  return parts.join(" ");
+}
+
+function logLlmCall(fields: Parameters<typeof formatLlmCallLine>[0]) {
+  console.log(formatLlmCallLine(fields));
 }
 
 async function createChatCompletion(params: {
@@ -336,6 +346,9 @@ async function createChatCompletion(params: {
   apiKey: string;
   signal?: AbortSignal;
   enableThinking?: boolean;
+  chatId?: string | null;
+  jobId?: string | null;
+  requestId?: string | null;
 }): Promise<Response> {
   const body: Record<string, unknown> = {
     model: params.model,
@@ -395,6 +408,9 @@ async function createChatCompletion(params: {
           durationMs: Date.now() - startedAt,
           attempt,
           fallback: isFallbackModel,
+          chatId: params.chatId,
+          jobId: params.jobId,
+          requestId: params.requestId,
         });
 
         if (response.ok) return response;
@@ -437,6 +453,9 @@ async function createChatCompletion(params: {
           durationMs: Date.now() - startedAt,
           attempt,
           fallback: isFallbackModel,
+          chatId: params.chatId,
+          jobId: params.jobId,
+          requestId: params.requestId,
         });
         lastError = err as Error;
         await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
@@ -499,6 +518,9 @@ export async function streamOpenRouter(
         messages,
         tools: chatTools.length ? chatTools : undefined,
         stream: true,
+        chatId: params.chatId,
+        jobId: params.jobId,
+        requestId: params.requestId,
         apiKey: key,
         signal: params.abortSignal,
         enableThinking: !!enableThinking,
@@ -666,6 +688,9 @@ export async function streamOpenRouter(
           completionTokens: streamUsage.completion_tokens,
           contextTokens: streamUsage.total_tokens,
           timeToFirstTokenMs,
+          chatId: params.chatId,
+          jobId: params.jobId,
+          requestId: params.requestId,
         });
       }
 
@@ -700,6 +725,9 @@ export async function streamOpenRouter(
             apiKey: key,
             signal: params.abortSignal,
             enableThinking: false,
+            chatId: params.chatId,
+            jobId: params.jobId,
+            requestId: params.requestId,
           });
           if (synthResponse.body) {
             const synthReader = synthResponse.body.getReader();
@@ -729,7 +757,15 @@ export async function streamOpenRouter(
             emptyResponse = true;
           }
           console.log(
-            `[llm] model=${model} empty_response_retry=${fullText ? "recovered" : "still_empty"}`,
+            [
+              `[llm] model=${model}`,
+              `empty_response_retry=${fullText ? "recovered" : "still_empty"}`,
+              params.chatId ? `chat_id=${params.chatId}` : null,
+              params.jobId ? `job_id=${params.jobId}` : null,
+              params.requestId ? `request_id=${params.requestId}` : null,
+            ]
+              .filter(Boolean)
+              .join(" "),
           );
           break;
         }
@@ -846,6 +882,9 @@ export async function streamOpenRouter(
           apiKey: key,
           signal: params.abortSignal,
           enableThinking: !!enableThinking,
+          chatId: params.chatId,
+          jobId: params.jobId,
+          requestId: params.requestId,
         });
         if (!response.body) throw new Error("OpenRouter response had no body");
         const reader2 = response.body.getReader();

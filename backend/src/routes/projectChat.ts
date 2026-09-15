@@ -311,6 +311,8 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
             projectId,
             job: {
                 jobId: job.id,
+                chatId,
+                requestId: job.request_id,
                 maxToolIterations: toolBudget,
                 hardToolBudget: toolBudget !== undefined,
                 checkpointId: () => latestCheckpointId,

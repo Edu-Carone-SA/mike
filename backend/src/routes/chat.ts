@@ -881,6 +881,9 @@ chatRouter.post("/", requireAuth, async (req, res) => {
             signal: streamAbort.signal,
             projectId: resolvedProjectId,
             job: {
+                jobId: activeJobId,
+                chatId,
+                requestId: analysisJob!.request_id,
                 maxToolIterations: toolBudget,
                 onToolBatchEnd: async (info) => {
                     const checkpoint = await saveCheckpoint(db, {
