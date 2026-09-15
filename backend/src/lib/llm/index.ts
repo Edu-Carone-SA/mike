@@ -1,5 +1,5 @@
 import { streamOpenRouter, completeOpenRouterText } from "./openrouter";
-export { shouldRetryEmptyVisible } from "./openrouter";
+export { shouldRetryEmptyVisible, formatLlmCallLine } from "./openrouter";
 import type { StreamChatParams, StreamChatResult, UserApiKeys } from "./types";
 
 export * from "./types";

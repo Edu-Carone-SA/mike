@@ -70,6 +70,10 @@ export type StreamChatParams = {
      */
     enableThinking?: boolean;
     abortSignal?: AbortSignal;
+    /** CloudWatch join keys — copied onto every `[llm]` line. */
+    chatId?: string | null;
+    jobId?: string | null;
+    requestId?: string | null;
 };
 
 export type StreamChatResult = {

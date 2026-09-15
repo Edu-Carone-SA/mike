@@ -6,6 +6,7 @@ import {
   streamChat,
   streamProjectChat,
 } from "@/app/lib/mikeApi";
+import { formatChatHttpError } from "@/app/lib/chatHttpError";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { useGenerateChatTitle } from "./useGenerateChatTitle";
 import type {
@@ -464,7 +465,9 @@ export function useAssistantChat({
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errText}`);
+        throw new Error(
+          formatChatHttpError(response.status, errText, response.headers),
+        );
       }
 
       const reader = response.body?.getReader();
