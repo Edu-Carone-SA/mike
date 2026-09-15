@@ -20,6 +20,15 @@ export interface DocxManifest {
     signatures: number; // signature lines/signature blocks (heuristic)
     /** 1-based clause numbers found in numbered headings, e.g. ["1", "2", "3.1"]. */
     clauseNumbers: string[];
+    /**
+     * Normalized clause-heading texts (first 100 chars). P0 QA 15/09/2026
+     * (G04): numbers alone collapse a parent ("7. RESCISÃO") into its
+     * children ("7. RESCISÃO.2"), so deleting the parent kept the number
+     * set unchanged and the edit published orphans as V2.
+     */
+    clauseHeadings: string[];
+    /** Headings starting with a dangling ".N" — parent numbering deleted. */
+    danglingPrefixes: string[];
     /** Exhibit/annex (anexo) headings verbatim (deduped, order preserved). */
     annexHeadings: string[];
 }
@@ -87,6 +96,8 @@ function collectParagraphInfo(
         tables: number;
         sections: number;
         clauseNumbers: string[];
+        clauseHeadings: string[];
+        danglingPrefixes: string[];
         annexHeadings: string[];
         signatures: number;
     },
@@ -100,6 +111,11 @@ function collectParagraphInfo(
             if (CLAUSE_RE.test(text)) {
                 const m = CLAUSE_RE.exec(text);
                 if (m) acc.clauseNumbers.push(m[1]);
+                acc.clauseHeadings.push(text.replace(/\s+/g, " ").slice(0, 100));
+            } else if (/^\s*\.\d/.test(text)) {
+                acc.danglingPrefixes.push(
+                    text.replace(/\s+/g, " ").slice(0, 100),
+                );
             }
             if (ANNEX_RE.test(text)) acc.annexHeadings.push(text.slice(0, 120));
             if (/assinaturas?\b|signature block|\bBy:\s*$|\bBy:\b.*\bName:\b/i.test(text)) {
@@ -156,6 +172,8 @@ export async function buildDocxManifest(
         tables: 0,
         sections: 0,
         clauseNumbers: [] as string[],
+        clauseHeadings: [] as string[],
+        danglingPrefixes: [] as string[],
         annexHeadings: [] as string[],
         signatures: 0,
     };
@@ -187,6 +205,8 @@ export async function buildDocxManifest(
         comments,
         signatures: acc.signatures,
         clauseNumbers: acc.clauseNumbers,
+        clauseHeadings: acc.clauseHeadings,
+        danglingPrefixes: acc.danglingPrefixes,
         annexHeadings: [...new Set(acc.annexHeadings)],
     };
 }
@@ -241,6 +261,38 @@ export function diffDocxManifests(
     for (const c of beforeClauses) {
         if (!afterClauses.has(c) && !allowed.has(c)) {
             losses.push(`clause ${c} removed`);
+        }
+    }
+    // P0 QA 15/09/2026 (G04): orphaned clause structure. A candidate that
+    // deletes a parent heading while numbered children survive, or that
+    // leaves a dangling ".N" prefix (parent numbering struck), has an
+    // incoherent section tree and must not publish.
+    for (const dangling of after.danglingPrefixes) {
+        losses.push(
+            `orphaned numbering prefix (parent heading removed): "${dangling}"`,
+        );
+    }
+    // A parent heading is the FULL text (number + title), e.g.
+    // "7. RESCISÃO". Children look like "7. RESCISÃO.2" — same root,
+    // longer text. When a before-heading disappears, any after-heading
+    // strictly longer and starting with it (minus trailing punctuation)
+    // is a surviving descendant: an orphan.
+    const stemOf = (h: string): string =>
+        h.replace(/[.)]?\s+$/, "").toLowerCase();
+    for (const bh of before.clauseHeadings) {
+        if (after.clauseHeadings.includes(bh)) continue;
+        const stem = stemOf(bh);
+        // A true descendant continues the parent heading with "." + digits
+        // ("7. rescisão" -> "7. rescisão.2"). A rename that extends the
+        // title with words ("7. rescisão contratual") is NOT a descendant.
+        const descendants = after.clauseHeadings.filter((ah) =>
+            stemOf(ah).startsWith(stem + "."),
+        );
+        if (descendants.length > 0) {
+            losses.push(
+                `clause heading removed while numbered descendants remain: ` +
+                    `"${bh}" (${descendants.length} orphan(s), e.g. "${descendants[0]}")`,
+            );
         }
     }
     const beforeAnnexes = new Set(before.annexHeadings);
