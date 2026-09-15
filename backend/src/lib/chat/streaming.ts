@@ -234,7 +234,16 @@ export async function runLLMStream(params: {
   } = params;
   const researchTools = includeResearchTools ? COURTLISTENER_TOOLS : [];
   const mcpTools = await buildUserMcpTools(userId, db);
-  const baseTools = [...TOOLS, ...researchTools, ...WORKFLOW_TOOLS];
+  const hasAttachedDocuments =
+    docStore.size > 0 || Object.keys(docIndex).length > 0;
+  const hasWorkflow = (workflowStore?.size ?? 0) > 0;
+  // P0 QA 15/09/2026: do not even advertise ask_inputs on a turn with no
+  // document and no workflow — GLM used the picker to "clarify" a fully
+  // specified one-line sentinel (chat d5b8e519 R25).
+  const chatTools = hasAttachedDocuments || hasWorkflow
+    ? TOOLS
+    : TOOLS.filter((t) => t.function.name !== "ask_inputs");
+  const baseTools = [...chatTools, ...researchTools, ...WORKFLOW_TOOLS];
   const activeTools = extraTools?.length
     ? [...baseTools, ...mcpTools, ...extraTools]
     : [...baseTools, ...mcpTools];

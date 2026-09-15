@@ -163,6 +163,24 @@ function normalizeAskInputsEvent(args: Record<string, unknown>): AskInputsEvent 
   return { type: "ask_inputs", items };
 }
 
+/**
+ * P0 QA 15/09/2026 (PR #97 reaceite, chat d5b8e519 R25): GLM called
+ * ask_inputs on a fully-specified one-line sentinel with no document and
+ * no workflow, opening a picker ("qual deve ser a resposta… para R26?")
+ * and leaving the turn in Working until Skip. Choice-only ask_inputs
+ * may pause the turn only when there is already a document or a workflow
+ * to clarify. A documents-kind item (user must attach a file) still pauses.
+ */
+export function shouldEmitAskInputsPause(opts: {
+  items: { kind: string }[];
+  hasAttachedDocuments: boolean;
+  hasWorkflow: boolean;
+}): boolean {
+  if (opts.items.length === 0) return false;
+  if (opts.items.some((item) => item.kind === "documents")) return true;
+  return opts.hasAttachedDocuments || opts.hasWorkflow;
+}
+
 function upsertCourtlistenerCases(
   state: CourtlistenerTurnState,
   inputs: CourtlistenerCaseInput[],
@@ -642,7 +660,28 @@ export async function runToolCalls(
 
     if (tc.function.name === "ask_inputs") {
       const event = normalizeAskInputsEvent(args);
-      if (event.items.length > 0) askInputsEvents.push(event);
+      const allowPause = shouldEmitAskInputsPause({
+        items: event.items,
+        hasAttachedDocuments:
+          docStore.size > 0 || Object.keys(docIndex ?? {}).length > 0,
+        hasWorkflow: (workflowStore?.size ?? 0) > 0,
+      });
+      if (allowPause && event.items.length > 0) {
+        askInputsEvents.push(event);
+      } else {
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({
+            ok: false,
+            non_retryable: true,
+            error:
+              "ask_inputs is not available on this turn: no document is missing and no workflow needs a choice. Answer the user's last message now.",
+            next_required_action:
+              "Do not call ask_inputs again. Produce the final answer immediately, matching any exact string the user requested.",
+          }),
+        });
+      }
       continue;
     }
 
