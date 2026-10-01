@@ -585,13 +585,14 @@ chatRouter.post("/", requireAuth, async (req, res) => {
         ];
         lastUser.files = merged;
     }
-    if (askInputsResponse) {
-        await appendAskInputsResponseToLastAssistantMessage(
-            db,
-            chatId,
-            askInputsResponse,
-        );
-    } else if (lastUser) {
+    // P0 Edu 01/10/2026 — document loss across turns. When the turn is an
+    // ask_inputs picker response, the user message carrying the attached
+    // document ids was NEVER persisted (the else-if skipped the insert),
+    // so buildDocContext's DB sweep found nothing on follow-up turns and
+    // the assistant asked the user to re-attach the document every time.
+    // Persist the user message on EVERY turn, then append the picker
+    // response to the last assistant message when present.
+    if (lastUser) {
         const { error: insertError } = await db
             .from("chat_messages")
             .insert({
@@ -606,6 +607,13 @@ chatRouter.post("/", requireAuth, async (req, res) => {
                 safeErrorLog(insertError),
             );
         }
+    }
+    if (askInputsResponse) {
+        await appendAskInputsResponseToLastAssistantMessage(
+            db,
+            chatId,
+            askInputsResponse,
+        );
     }
 
     const { docIndex, docStore } = await buildDocContext(

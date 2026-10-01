@@ -411,7 +411,13 @@ export async function buildDocContext(
       if (typedRow.role === "assistant" && Array.isArray(typedRow.content)) {
         for (const ev of typedRow.content as Record<string, unknown>[]) {
           if (
-            (ev?.type === "doc_created" || ev?.type === "doc_edited") &&
+            (ev?.type === "doc_created" ||
+              ev?.type === "doc_edited" ||
+              // P0 Edu 01/10/2026 — chats where the attachment came through
+              // the ask_inputs picker never persisted user-message files
+              // (fixed at the routes); sweeping doc_read restores the
+              // document for those existing conversations.
+              ev?.type === "doc_read") &&
             typeof ev.document_id === "string"
           ) {
             documentIds.add(ev.document_id);

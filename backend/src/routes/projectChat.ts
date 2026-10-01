@@ -134,13 +134,10 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
         ];
         lastUser.files = merged;
     }
-    if (askInputsResponse) {
-        await appendAskInputsResponseToLastAssistantMessage(
-            db,
-            chatId,
-            askInputsResponse,
-        );
-    } else if (lastUser) {
+    // P0 Edu 01/10/2026 — same document-loss fix as the standalone route:
+    // the picker flow skipped the user-message insert, losing the attached
+    // document ids for every follow-up turn.
+    if (lastUser) {
         const { error: insertError } = await db
             .from("chat_messages")
             .insert({
@@ -155,6 +152,13 @@ projectChatRouter.post("/", requireAuth, async (req, res) => {
                 safeErrorLog(insertError),
             );
         }
+    }
+    if (askInputsResponse) {
+        await appendAskInputsResponseToLastAssistantMessage(
+            db,
+            chatId,
+            askInputsResponse,
+        );
     }
 
     const { docIndex, docStore, folderPaths } = await buildProjectDocContext(
